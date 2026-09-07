@@ -1,0 +1,16 @@
+{
+  "_note": "Proofline's own record of previously observed vendor/account pairs. Application-level memory only; not an external or ledger-wide source.",
+  "vendors": [
+    {
+      "vendor_key": "northwindlogisticsltd",
+      "vendor_name": "Northwind Logistics Ltd",
+      "accounts": [
+        {
+          "account_reference": "4471-0092-8815",
+          "first_seen_at": "2026-02-11T09:14:00Z",
+          "last_seen_at": "2026-07-30T16:02:00Z"
+        }
+      ]
+    }
+  ]
+}
