@@ -1,0 +1,15 @@
+# PDF generation for the validation corpus.
+reportlab==4.4.10
+
+# PDF structure round-trip, used to produce the re-saved-by-another-tool document.
+pikepdf==10.13.0.post1
+
+# PDF parsing, text-layer extraction, and page rasterisation.
+pymupdf==1.28.2
+
+# Image decoding and compression analysis.
+pillow==12.3.0
+numpy==2.4.0
+
+# OCR fallback for documents with no text layer.
+pytesseract==0.3.13
