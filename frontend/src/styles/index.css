@@ -1,0 +1,65 @@
+@import "tailwindcss";
+
+@theme {
+  --color-bg: #fbfbfa;
+  --color-panel: #ffffff;
+  --color-ink: #16171a;
+  --color-muted: #6b7078;
+  --color-line: #e4e4e2;
+  --color-accent: #1f2430;
+
+  --color-clear: #1a7f5a;
+  --color-clear-bg: #e9f6f0;
+  --color-review: #9a5b12;
+  --color-review-bg: #fdf3e4;
+  --color-fault: #a33232;
+  --color-fault-bg: #fbecec;
+
+  --font-mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+}
+
+@media (prefers-color-scheme: dark) {
+  @theme {
+    --color-bg: #131416;
+    --color-panel: #1a1c1f;
+    --color-ink: #ececee;
+    --color-muted: #9aa0a8;
+    --color-line: #2b2e33;
+    --color-accent: #e8e9eb;
+
+    --color-clear: #5fcfa0;
+    --color-clear-bg: #12241d;
+    --color-review: #e0a355;
+    --color-review-bg: #251c10;
+    --color-fault: #e88888;
+    --color-fault-bg: #2a1616;
+  }
+}
+
+@layer base {
+  html {
+    color-scheme: light dark;
+  }
+
+  body {
+    background-color: var(--color-bg);
+    color: var(--color-ink);
+    -webkit-font-smoothing: antialiased;
+  }
+}
+
+@layer components {
+  .stage-pulse {
+    animation: stage-pulse 1.1s ease-in-out infinite;
+  }
+}
+
+@keyframes stage-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.3;
+  }
+}
