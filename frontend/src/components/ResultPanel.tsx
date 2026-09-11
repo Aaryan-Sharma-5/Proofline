@@ -9,9 +9,9 @@ import type { AgentOutcome, DemoVerifyResponse, PaymentInfo } from "../lib/types
 import { Block, Panel } from "./Panel";
 
 const DECISION_STYLES = {
-  CLEAR: "text-clear bg-clear-bg",
-  REVIEW: "text-review bg-review-bg",
-  FAULT: "text-fault bg-fault-bg",
+  CLEAR: "text-clear bg-clear-bg border border-clear-border",
+  REVIEW: "text-review bg-review-bg border border-review-border",
+  FAULT: "text-fault bg-fault-bg border border-fault-border",
 } as const;
 
 export function ResultPanel({ result }: { result: DemoVerifyResponse }) {
@@ -19,62 +19,64 @@ export function ResultPanel({ result }: { result: DemoVerifyResponse }) {
   const rejected = Boolean(!verification.decision && verification.error);
 
   return (
-    <Panel title="Verification complete" id="panel-result">
-      {rejected ? (
-        <DecisionRow
-          label="NO VERDICT"
-          tone="FAULT"
-          note={NO_VERDICT_NOTE}
-          small
-        />
-      ) : verification.decision ? (
-        <DecisionRow
-          label={verification.decision}
-          tone={verification.decision}
-          note={DECISION_NOTE[verification.decision]}
-        />
-      ) : (
-        <DecisionRow
-          label="ERROR"
-          tone="FAULT"
-          note="The verification did not complete."
-          small
-        />
-      )}
-
-      <Block title="Evidence">
+    <>
+      <Panel title="Verification complete" id="panel-result" connectsDown>
         {rejected ? (
-          <ul id="evidence" className="m-0 list-none p-0">
-            <li className="py-2">
-              <span className="code font-mono text-[0.82rem] font-semibold">
-                {verification.error}
-              </span>
-              <div className="explain mt-0.5 text-[0.89rem] text-muted">
-                {verification.message
-                  ? `Reported by the verification service: ${verification.message}.`
-                  : "Reported by the verification service."}
-              </div>
-            </li>
-          </ul>
+          <DecisionRow
+            label="NO VERDICT"
+            tone="FAULT"
+            note={NO_VERDICT_NOTE}
+            small
+          />
+        ) : verification.decision ? (
+          <DecisionRow
+            label={verification.decision}
+            tone={verification.decision}
+            note={DECISION_NOTE[verification.decision]}
+          />
         ) : (
-          <EvidenceList codes={verification.evidence_codes ?? []} />
+          <DecisionRow
+            label="ERROR"
+            tone="FAULT"
+            note="The verification did not complete."
+            small
+          />
         )}
-      </Block>
 
-      <Block title="Agent action">
+        <Block title="Evidence">
+          {rejected ? (
+            <ul id="evidence" className="m-0 list-none p-0">
+              <li className="py-2">
+                <span className="code font-mono text-[0.82rem] font-semibold">
+                  {verification.error}
+                </span>
+                <div className="explain mt-0.5 text-[0.89rem] text-muted">
+                  {verification.message
+                    ? `Reported by the verification service: ${verification.message}.`
+                    : "Reported by the verification service."}
+                </div>
+              </li>
+            </ul>
+          ) : (
+            <EvidenceList codes={verification.evidence_codes ?? []} />
+          )}
+        </Block>
+      </Panel>
+
+      <Panel title="Agent action" connected>
         <div id="agent">
           <AgentAction agent={result.agent} />
         </div>
-      </Block>
+      </Panel>
 
-      <Block title="Onchain proof">
+      <Panel title="Onchain proof">
         <OnchainProof
           payment={result.payment}
           verificationId={verification.verification_id ?? null}
           rejected={rejected}
         />
-      </Block>
-    </Panel>
+      </Panel>
+    </>
   );
 }
 
@@ -90,12 +92,12 @@ function DecisionRow({
   small?: boolean;
 }) {
   return (
-    <div className="flex flex-wrap items-center gap-x-3.5 gap-y-2">
+    <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
       <span
         id="decision"
         className={[
-          "rounded-lg px-2.5 py-0.5 font-semibold tracking-[-0.02em]",
-          small ? "text-[1.3rem]" : "text-[1.85rem]",
+          "rounded-[6px] font-mono font-bold tracking-[0.04em]",
+          small ? "px-2.5 py-1 text-[0.95rem]" : "px-3.5 py-1.5 text-[0.95rem]",
           DECISION_STYLES[tone],
         ].join(" ")}
       >
@@ -103,7 +105,7 @@ function DecisionRow({
       </span>
       <span
         id="decision-note"
-        className="max-w-[34rem] text-[0.87rem] text-muted"
+        className="max-w-[34rem] text-[0.85rem] text-muted"
       >
         {note}
       </span>
@@ -128,10 +130,10 @@ function EvidenceList({ codes }: { codes: string[] }) {
         const meta = describeEvidence(code);
         return (
           <li key={code} className="border-t border-line py-2 first:border-t-0">
-            <div>
+            <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
               <span className="code font-mono text-[0.82rem] font-semibold">{code}</span>
               {meta ? (
-                <span className="level ml-2 rounded border border-line px-1.5 align-[0.08em] font-mono text-[0.68rem] text-muted">
+                <span className="level whitespace-nowrap rounded border border-line-strong px-1.5 align-[0.08em] font-mono text-[0.66rem] text-faint">
                   {levelLabel(meta.level)}
                 </span>
               ) : null}
@@ -201,18 +203,23 @@ function OnchainProof({
   }
 
   return (
-    <div id="proof" className="flex flex-wrap items-baseline gap-x-6 gap-y-2">
+    <div
+      id="proof"
+      className="grid grid-cols-1 gap-x-6 gap-y-4 sm:grid-cols-2 lg:grid-cols-[repeat(3,minmax(0,1fr))_auto]"
+    >
       <Field label="Amount" value="0.02 HBAR" />
       {payment.payer ? <Field label="Payer" value={payment.payer} /> : null}
       <Field label="Transaction" value={payment.transaction} />
-      <a
-        className="hashscan font-medium underline underline-offset-2"
-        href={payment.hashscan || hashscanUrl(payment.transaction)}
-        target="_blank"
-        rel="noopener noreferrer"
-      >
-        View on HashScan →
-      </a>
+      <div className="self-start lg:pt-[22px]">
+        <a
+          className="hashscan whitespace-nowrap font-medium text-ink underline decoration-line-strong underline-offset-2 hover:decoration-ink"
+          href={payment.hashscan || hashscanUrl(payment.transaction)}
+          target="_blank"
+          rel="noopener noreferrer"
+        >
+          View on HashScan →
+        </a>
+      </div>
       {verificationId ? <Field label="Verification" value={verificationId} /> : null}
     </div>
   );
@@ -220,8 +227,8 @@ function OnchainProof({
 
 function Field({ label, value }: { label: string; value: string }) {
   return (
-    <div>
-      <div className="text-[0.72rem] uppercase tracking-[0.07em] text-muted">
+    <div className="min-w-0">
+      <div className="mb-1.5 text-[0.68rem] uppercase tracking-[0.06em] text-faint">
         {label}
       </div>
       <div className="break-all font-mono text-[0.8rem]">{value}</div>

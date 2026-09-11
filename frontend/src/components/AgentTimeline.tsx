@@ -44,6 +44,13 @@ function formatClock(iso: string): string {
   );
 }
 
+function isReviewStage(stage: Stage, detail?: Record<string, unknown>): boolean {
+  if (!detail) return false;
+  if (stage === "DECISION") return detail.decision === "REVIEW";
+  if (stage === "AGENT_ACTION") return detail.action === "HALT";
+  return false;
+}
+
 export function AgentTimeline({ seen, current, finished }: Props) {
   return (
     <Panel title="Verification">
@@ -52,6 +59,7 @@ export function AgentTimeline({ seen, current, finished }: Props) {
           const event = seen.get(stage);
           const isActive = !finished && stage === current && !event;
           const skipped = !event && !isActive && finished;
+          const isReview = event ? isReviewStage(stage, event.detail) : false;
 
           const detail = event ? describeDetail(stage, event.detail) : "";
 
@@ -61,30 +69,37 @@ export function AgentTimeline({ seen, current, finished }: Props) {
               // State markers are semantic hooks the capture suite asserts against, alongside the visual utilities.
               className={[
                 event ? "done" : isActive ? "active" : skipped ? "skipped" : "pending",
-                "grid grid-cols-[1.1rem_1fr_auto] items-baseline gap-x-3 py-1.5",
-                event ? "text-ink" : "text-muted",
+                "grid grid-cols-[1rem_1fr_auto] items-baseline gap-x-3.5 border-t border-line py-2.5 first:border-t-0",
+                event ? "text-ink" : "text-faint",
                 skipped ? "opacity-45" : "",
               ].join(" ")}
             >
               <span
                 className={[
-                  "size-2 justify-self-center self-center rounded-full",
+                  "size-1.5 justify-self-center self-center rounded-full",
                   event
-                    ? "bg-clear"
+                    ? isReview
+                      ? "bg-review"
+                      : "bg-clear"
                     : isActive
                       ? "stage-pulse bg-review"
-                      : "bg-line",
+                      : "bg-line-strong",
                 ].join(" ")}
               />
               <span>
-                <span className="stage-name font-mono text-[0.82rem]">{label}</span>
+                <span className="stage-name text-[0.83rem] font-medium">{label}</span>
                 {detail ? (
-                  <span className="stage-detail mt-0.5 block break-all text-[0.8rem] text-muted">
+                  <span
+                    className={[
+                      "stage-detail mt-0.5 block break-all font-mono text-[0.78rem]",
+                      isReview ? "text-review" : "text-muted",
+                    ].join(" ")}
+                  >
                     {detail}
                   </span>
                 ) : null}
               </span>
-              <span className="stage-time font-mono text-[0.74rem] text-muted">
+              <span className="stage-time whitespace-nowrap font-mono text-[0.73rem] text-faint">
                 {event ? formatClock(event.ts) : ""}
               </span>
             </li>

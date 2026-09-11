@@ -39,8 +39,15 @@ export function describeEvidence(code: string): EvidenceMeta | null {
   return (EVIDENCE as Record<string, EvidenceMeta>)[code] ?? null;
 }
 
+const LEVEL_CATEGORY: Record<EvidenceLevel, string> = {
+  A: "SEMANTIC",
+  B: "PROVENANCE",
+  C: "IMAGE",
+  safeguard: "SAFEGUARD",
+};
+
 export function levelLabel(level: EvidenceLevel): string {
-  return level === "safeguard" ? "safeguard" : `level ${level}`;
+  return level === "safeguard" ? "SAFEGUARD" : `LEVEL ${level} · ${LEVEL_CATEGORY[level]}`;
 }
 
 /** Copy that qualifies each decision, so neither reads as more than it is. */

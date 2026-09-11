@@ -8,7 +8,7 @@ export const STAGE_SEQUENCE: { stage: Stage; label: string }[] = [
   { stage: "PAYING", label: "Payment authorized" },
   { stage: "ANALYZING", label: "Analyzing document" },
   { stage: "DECISION", label: "Decision reached" },
-  { stage: "PAID", label: "Payment settled" },
+  { stage: "PAID", label: "Verification fee settled" },
   { stage: "AGENT_ACTION", label: "Agent acted" },
 ];
 

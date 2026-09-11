@@ -1,13 +1,20 @@
 import { useRef } from "react";
 
 import { AgentTimeline } from "../components/AgentTimeline";
+import { LatestVerification } from "../components/LatestVerification";
 import { Block, Panel } from "../components/Panel";
 import { ResultPanel } from "../components/ResultPanel";
 import { useVerification } from "../hooks/useVerification";
 
 const BUTTON =
-  "rounded-[7px] border px-4 py-2.5 font-medium transition-colors " +
+  "rounded-[6px] border px-4 py-2.5 text-[0.845rem] font-medium transition-colors " +
   "disabled:cursor-not-allowed disabled:opacity-45";
+
+const SECONDARY_BUTTON =
+  `${BUTTON} border-line-strong bg-panel text-ink hover:bg-panel-2 hover:border-[#B7B3A8]`;
+
+const PRIMARY_BUTTON =
+  `${BUTTON} border-ink bg-ink text-white hover:bg-[#2E2F33]`;
 
 export function Home() {
   const { phase, result, failure, label, events, verifySample, verifyUpload, busy } = useVerification();
@@ -17,19 +24,24 @@ export function Home() {
   return (
     <>
       <header>
-        <h1 className="mb-1 text-2xl font-bold tracking-[-0.015em]">Proofline</h1>
-        <p className="text-muted">Document integrity verification for AP agents</p>
-        <p className="mt-2 text-[0.82rem] text-muted">
+        <div className="mb-1.5 flex items-baseline gap-3">
+          <h1 className="text-[1.375rem] font-semibold tracking-[-0.01em]">Proofline</h1>
+          <span className="rounded border border-line-strong px-1.5 py-0.5 font-mono text-[0.68rem] text-faint">
+            Hedera testnet
+          </span>
+        </div>
+        <p className="text-[0.94rem] text-muted">Document integrity verification for AP agents</p>
+        <p className="mt-2 max-w-[35rem] text-[0.81rem] leading-relaxed text-faint">
           Each run performs a real Hedera testnet payment through a server-side reference agent. No wallet needed.
         </p>
       </header>
 
-      <div className="mt-8 flex flex-wrap items-center gap-2.5">
+      <div className="mt-9 flex flex-wrap items-center gap-2.5">
         <button
           id="btn-clear"
           disabled={busy}
           onClick={() => void verifySample("clear")}
-          className={`${BUTTON} border-accent bg-accent text-bg hover:opacity-90`}
+          className={SECONDARY_BUTTON}
         >
           Try CLEAR sample
         </button>
@@ -37,15 +49,12 @@ export function Home() {
           id="btn-review"
           disabled={busy}
           onClick={() => void verifySample("review")}
-          className={`${BUTTON} border-accent bg-accent text-bg hover:opacity-90`}
+          className={SECONDARY_BUTTON}
         >
           Try REVIEW sample
         </button>
 
-        <label
-          htmlFor="file"
-          className={`${BUTTON} cursor-pointer border-line bg-panel hover:border-muted`}
-        >
+        <label htmlFor="file" className={`${PRIMARY_BUTTON} cursor-pointer`}>
           Upload your own
         </label>
         <input
@@ -67,6 +76,9 @@ export function Home() {
           <span className="text-[0.85rem] text-muted">{label}</span>
         ) : null}
       </div>
+
+      {/* Idle only: once a run starts, its own timeline and result are the subject. */}
+      {phase === "idle" ? <LatestVerification /> : null}
 
       {phase !== "idle" ? (
         <AgentTimeline

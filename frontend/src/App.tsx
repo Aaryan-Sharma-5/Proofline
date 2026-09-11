@@ -19,19 +19,19 @@ export function App() {
   const isHistory = path === "/history" || path === "/history.html";
 
   return (
-    <div className="mx-auto max-w-4xl px-6 pb-16 pt-11">
+    <div className="mx-auto max-w-[1200px] px-6 pb-16 pt-14 sm:px-8">
       {isHistory ? <History /> : <Home />}
 
-      <footer className="mt-10 text-[0.8rem] text-muted">
+      <footer className="mt-10 text-[0.8rem] text-faint">
         Deterministic evidence-backed decisions.
         {isHistory ? null : (
           <>
             {" "}
-            <a href="/history" className="underline underline-offset-2">
+            <a href="/history" className="text-muted underline underline-offset-2 hover:text-ink">
               Verification history
             </a>{" "}
             ·{" "}
-            <a href="/docs" className="underline underline-offset-2">
+            <a href="/docs" className="text-muted underline underline-offset-2 hover:text-ink">
               API documentation
             </a>
           </>

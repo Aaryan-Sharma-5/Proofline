@@ -10,7 +10,7 @@ function formatWhen(iso: string): string {
 }
 
 const TH =
-  "px-3 py-2.5 text-left text-[0.7rem] font-semibold uppercase tracking-[0.08em] text-muted border-b border-line";
+  "px-3 py-2.5 text-left text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-faint border-b border-line";
 
 export function History() {
   const [rows, setRows] = useState<VerificationListItem[] | null>(null);
@@ -47,20 +47,20 @@ export function History() {
   return (
     <>
       <header>
-        <h1 className="mb-1 text-2xl font-bold tracking-[-0.015em]">
+        <h1 className="mb-1 text-[1.375rem] font-semibold tracking-[-0.01em]">
           Verification history
         </h1>
-        <p className="text-muted">Previous verifications performed by this service</p>
+        <p className="text-[0.94rem] text-muted">Previous verifications performed by this service</p>
       </header>
 
-      <nav className="mt-6 flex gap-4 text-[0.9rem]">
+      <nav className="mt-6 flex gap-4 text-[0.87rem]">
         <a href="/" className="text-muted hover:text-ink">
           Verify a document
         </a>
         <a
           href="/history"
           aria-current="page"
-          className="border-b border-accent pb-0.5 text-ink"
+          className="border-b border-ink pb-0.5 text-ink"
         >
           History
         </a>
@@ -69,7 +69,7 @@ export function History() {
         </a>
       </nav>
 
-      <p className="mt-6 rounded-lg border border-line bg-panel px-4 py-3 text-[0.86rem] text-muted">
+      <p className="mt-6 rounded-[10px] border border-line bg-panel-2 px-4 py-3 text-[0.84rem] leading-relaxed text-muted">
         These records contain no vendor names, beneficiary accounts, or extracted document fields; those are never stored. Uploaded documents are analysed and deleted; only the decision, its evidence, and a content hash are retained.
       </p>
 
@@ -104,7 +104,7 @@ export function History() {
                       void open(row.verification_id);
                     }
                   }}
-                  className="cursor-pointer hover:bg-panel aria-selected:bg-panel"
+                  className="cursor-pointer hover:bg-panel-2 aria-selected:bg-panel-2"
                 >
                   <td className="break-all border-b border-line p-3 align-top font-mono text-[0.78rem]">
                     {row.verification_id}
@@ -112,10 +112,10 @@ export function History() {
                   <td className="border-b border-line p-3 align-top">
                     <span
                       className={[
-                        "inline-block rounded px-2 py-0.5 text-[0.74rem] font-semibold",
+                        "inline-block rounded-sm border px-2 py-0.5 font-mono text-[0.72rem] font-semibold",
                         row.decision === "CLEAR"
-                          ? "bg-clear-bg text-clear"
-                          : "bg-review-bg text-review",
+                          ? "border-clear-border bg-clear-bg text-clear"
+                          : "border-review-border bg-review-bg text-review",
                       ].join(" ")}
                     >
                       {row.decision}
@@ -143,12 +143,12 @@ export function History() {
                         target="_blank"
                         rel="noopener noreferrer"
                         onClick={(event) => event.stopPropagation()}
-                        className="break-all font-mono text-[0.78rem] underline underline-offset-2"
+                        className="break-all font-mono text-[0.78rem] text-ink underline decoration-line-strong underline-offset-2 hover:decoration-ink"
                       >
                         {row.payment_tx_id}
                       </a>
                     ) : (
-                      <span className="text-muted">—</span>
+                      <span className="text-faint">—</span>
                     )}
                   </td>
                   <td className="whitespace-nowrap border-b border-line p-3 align-top text-[0.82rem] text-muted">
@@ -166,7 +166,7 @@ export function History() {
           id="detail"
           className="mt-6 rounded-[10px] border border-line bg-panel px-6 py-5"
         >
-          <h2 className="mb-4 text-[0.72rem] font-semibold uppercase tracking-[0.09em] text-muted">
+          <h2 className="mb-4 text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-faint">
             Record detail (masked)
           </h2>
 
@@ -205,7 +205,7 @@ export function History() {
                     href={hashscanUrl(detail.payment_tx_id)}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="underline underline-offset-2"
+                    className="text-ink underline decoration-line-strong underline-offset-2 hover:decoration-ink"
                   >
                     {detail.payment_tx_id} — view on HashScan →
                   </a>
