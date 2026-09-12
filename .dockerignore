@@ -1,0 +1,24 @@
+# Never let secrets into a build context or image layer.
+.env
+.env.*
+!.env.example
+
+.git
+.venv
+node_modules
+**/node_modules
+
+# Build outputs are produced inside the image, not copied from the host.
+frontend/dist
+backend/test_docs
+**/__pycache__
+*.py[cod]
+
+# Local state and artifacts.
+*.db
+*.db-wal
+*.db-shm
+screenshots
+.pytest_cache
+.vscode
+.claude

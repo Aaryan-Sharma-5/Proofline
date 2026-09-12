@@ -1,0 +1,77 @@
+# Production shape:
+#
+#   Internet -> gateway :4021 (sole public origin)
+#                 |
+#                 +-- reference agent, loopback inside the gateway container
+#                 |
+#                 +-- analysis service, private network only
+#                       |
+#                       +-- /data volume (SQLite)
+#
+# Only the gateway publishes a port. The analysis service has no `ports:` entry at all, so it is unreachable from the host and from the internet; it is resolvable only as `analysis:8099` on the internal bridge network.
+
+services:
+  analysis:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    restart: unless-stopped
+    networks:
+      - internal
+    volumes:
+      - proofline-data:/data
+    environment:
+      ANALYSIS_HOST: 0.0.0.0
+      ANALYSIS_PORT: "8099"
+      DATABASE_URL: /data/proofline.db
+    # No `ports:`. This is the isolation control; do not add one.
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request;urllib.request.urlopen('http://127.0.0.1:8099/health').read()"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+
+  gateway:
+    build:
+      context: .
+      dockerfile: x402-gate/Dockerfile
+    restart: unless-stopped
+    depends_on:
+      analysis:
+        condition: service_healthy
+    networks:
+      - internal
+    ports:
+      - "${PUBLIC_PORT:-4021}:4021"
+    environment:
+      PORT: "4021"
+      ANALYSIS_SERVICE_URL: http://analysis:8099
+      AGENT_HOST: 127.0.0.1
+      AGENT_PORT: "4022"
+      AGENT_SERVICE_URL: http://127.0.0.1:4022
+      CORPUS_DIR: /srv/backend/test_docs
+      # Bounty-critical: Blocky402, not the generic dev facilitator.
+      FACILITATOR_URL: ${FACILITATOR_URL:-https://api.testnet.blocky402.com}
+      X402_NETWORK: ${X402_NETWORK:-hedera:testnet}
+      PRICE_VERIFY: ${PRICE_VERIFY:-0.02}
+      PRICE_PING: ${PRICE_PING:-0.01}
+      MAX_UPLOAD_BYTES: ${MAX_UPLOAD_BYTES:-10485760}
+      SERVICE_VERSION: ${SERVICE_VERSION:-0.1.0}
+      # Must be the real external origin in production
+      GATEWAY_PUBLIC_URL: ${GATEWAY_PUBLIC_URL:?set this to the public https origin}
+      # Secrets: supplied by the environment, never baked into the image.
+      HEDERA_PAY_TO_ACCOUNT_ID: ${HEDERA_PAY_TO_ACCOUNT_ID:?required}
+      AGENT_ACCOUNT_ID: ${AGENT_ACCOUNT_ID:?required}
+      AGENT_PRIVATE_KEY: ${AGENT_PRIVATE_KEY:?required}
+      # Abuse controls for the server-funded demo path.
+      DEMO_RATE_LIMIT_PER_MINUTE: ${DEMO_RATE_LIMIT_PER_MINUTE:-12}
+      DEMO_MAX_CONCURRENT: ${DEMO_MAX_CONCURRENT:-2}
+      DEMO_TIMEOUT_MS: ${DEMO_TIMEOUT_MS:-120000}
+
+networks:
+  internal:
+    driver: bridge
+
+volumes:
+  proofline-data:

@@ -13,3 +13,7 @@ numpy==2.4.0
 
 # OCR fallback for documents with no text layer.
 pytesseract==0.3.13
+
+# Internal analysis service
+fastapi==0.115.6
+uvicorn[standard]==0.34.0

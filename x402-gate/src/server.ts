@@ -15,11 +15,16 @@ import {
   AGENT_SERVICE_URL,
   SERVICE_VERSION,
 } from "./config.js";
+import { DEMO_TIMEOUT_MS } from "./config.js";
 import { buildDocsPage, buildOpenApiDocument } from "./api-docs.js";
+import { demoLimits } from "./demo-limits.js";
 import * as events from "./events.js";
 import { createX402Middleware, type PaidRequest } from "./x402-middleware.js";
 
 const app = express();
+
+// Behind a platform load balancer, req.ip must reflect the real client for the demo rate limit to be per-caller rather than per-proxy.
+app.set("trust proxy", 1);
 
 const FRONTEND_DIR = fileURLToPath(new URL("../../frontend/dist", import.meta.url));
 app.use(
@@ -135,10 +140,14 @@ app.get("/docs", (_req, res) => {
   res.type("html").send(buildDocsPage());
 });
 
-app.post("/demo/verify", express.json({ limit: "20mb" }), async (req, res) => {
+app.post("/demo/verify", demoLimits, express.json({ limit: "20mb" }), async (req, res) => {
   const correlationId = events.sanitizeCorrelationId(
     (req.body as { stream_id?: unknown })?.stream_id,
   );
+
+  // A hung agent or facilitator must not pin a demo slot open indefinitely.
+  const abort = new AbortController();
+  const timer = setTimeout(() => abort.abort(), DEMO_TIMEOUT_MS);
 
   let upstream: globalThis.Response;
   try {
@@ -149,14 +158,27 @@ app.post("/demo/verify", express.json({ limit: "20mb" }), async (req, res) => {
         ...(req.body ?? {}),
         ...(correlationId ? { stream_id: correlationId } : {}),
       }),
+      signal: abort.signal,
     });
   } catch (error) {
-    console.error("[gateway] reference agent unreachable:", (error as Error).message);
+    const timedOut = (error as Error).name === "AbortError";
+    console.error(
+      `[gateway] reference agent ${timedOut ? "timed out" : "unreachable"}:`,
+      (error as Error).message,
+    );
+    if (correlationId) {
+      events.emit(correlationId, "ERROR", { stage: "AGENT_ACTION" });
+      events.complete(correlationId);
+    }
     res.status(503).json({
       error: "SERVICE_UNAVAILABLE",
-      message: "The reference agent is unavailable.",
+      message: timedOut
+        ? "The verification took too long and was stopped."
+        : "The reference agent is unavailable.",
     });
     return;
+  } finally {
+    clearTimeout(timer);
   }
 
   const payload = await upstream.json().catch(() => null);
@@ -269,6 +291,48 @@ app.get(SPA_ROUTES, (req, res, next) => {
 app.use((_req, res) => {
   res.status(404).json({ error: "NOT_FOUND" });
 });
+
+interface HttpError extends Error {
+  status?: number;
+  statusCode?: number;
+  type?: string;
+}
+
+app.use(
+  (
+    error: HttpError,
+    _req: express.Request,
+    res: express.Response,
+    next: express.NextFunction,
+  ) => {
+    if (res.headersSent) return next(error);
+
+    const status = error.status ?? error.statusCode ?? 500;
+
+    // Full detail to the server log, never to the caller.
+    console.error(`[gateway] ${status} ${error.type ?? error.name}: ${error.message}`);
+
+    if (status === 413) {
+      res.status(413).json({
+        error: "INVALID_DOCUMENT",
+        message: `The document exceeds the ${MAX_UPLOAD_BYTES} byte limit.`,
+      });
+      return;
+    }
+    if (status === 400) {
+      res.status(400).json({
+        error: "INVALID_DOCUMENT",
+        message: "The request body could not be read.",
+      });
+      return;
+    }
+
+    res.status(status >= 400 && status < 600 ? status : 500).json({
+      error: "SERVICE_UNAVAILABLE",
+      message: "The request could not be completed.",
+    });
+  },
+);
 
 app.listen(PORT, () => {
   console.log(`[gateway] listening on :${PORT}`);

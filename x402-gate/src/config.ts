@@ -40,4 +40,10 @@ export const AGENT_SERVICE_URL = optional(
   "http://127.0.0.1:4022",
 );
 
-export const SERVICE_VERSION = optional("SERVICE_VERSION", "0.1.0");
+export const SERVICE_VERSION = optional("SERVICE_VERSION", "0.1.0")
+
+export const DEMO_RATE_LIMIT_PER_MINUTE = Number(
+  optional("DEMO_RATE_LIMIT_PER_MINUTE", "12"),
+);
+export const DEMO_MAX_CONCURRENT = Number(optional("DEMO_MAX_CONCURRENT", "2"));
+export const DEMO_TIMEOUT_MS = Number(optional("DEMO_TIMEOUT_MS", "120000"));

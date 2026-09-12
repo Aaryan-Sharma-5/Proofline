@@ -9,7 +9,7 @@ const SECONDARY = `${BUTTON} border-line-strong bg-panel text-ink hover:bg-panel
 const PRINCIPLES = [
   {
     title: "Evidence",
-    body: "Named, inspectable findings instead of opaque confidence scores.",
+    body: "Named, inspectable findings instead of an opaque numeric rating.",
   },
   {
     title: "Deterministic",
