@@ -1,4 +1,4 @@
-import { useRef } from "react";
+import { useEffect, useRef } from "react";
 
 import { AgentTimeline } from "../components/AgentTimeline";
 import { LatestVerification } from "../components/LatestVerification";
@@ -20,6 +20,19 @@ export function Home() {
   const { phase, result, failure, label, events, verifySample, verifyUpload, busy } = useVerification();
 
   const fileRef = useRef<HTMLInputElement>(null);
+  const autoRan = useRef(false);
+
+  // Deep link from the landing CTAs. Runs the same sample path the buttons do.
+  useEffect(() => {
+    if (autoRan.current) return;
+    const requested = new URLSearchParams(window.location.search).get("sample");
+    if (requested !== "clear" && requested !== "review") return;
+
+    autoRan.current = true;
+    // Drop the query so a reload does not silently spend another payment.
+    window.history.replaceState(null, "", "/app");
+    void verifySample(requested);
+  }, [verifySample]);
 
   return (
     <>

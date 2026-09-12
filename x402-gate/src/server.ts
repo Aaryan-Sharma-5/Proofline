@@ -259,7 +259,7 @@ const { middleware } = await createX402Middleware([
 app.use("/verify", express.raw({ type: "*/*", limit: MAX_UPLOAD_BYTES }));
 app.use(middleware);
 
-const SPA_ROUTES = ["/", "/history", "/history.html"];
+const SPA_ROUTES = ["/", "/app", "/history", "/history.html"];
 
 app.get(SPA_ROUTES, (req, res, next) => {
   if (!req.accepts("html")) return next();
