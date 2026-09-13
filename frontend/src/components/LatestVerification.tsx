@@ -55,17 +55,17 @@ export function LatestVerification() {
             href="/history"
             className="whitespace-nowrap text-[0.78rem] font-medium text-ink underline decoration-line-strong underline-offset-2 hover:decoration-ink"
           >
-            View all →
+            View verification log →
           </a>
         ) : null
       }
     >
       {row === null ? (
         <p className="text-[0.86rem] text-muted">
-          No verifications recorded yet. Run one of the samples to create the first.
+          No verifications yet. Verify one of the samples to create the first.
         </p>
       ) : (
-        <div className="grid grid-cols-1 gap-x-8 gap-y-4 sm:grid-cols-2 lg:grid-cols-4">
+        <div className="grid grid-cols-1 gap-x-8 gap-y-4 sm:grid-cols-[auto_minmax(0,1fr)] lg:grid-cols-[auto_minmax(0,14rem)_minmax(0,1fr)_auto]">
           <div className="min-w-0">
             <div className="mb-1.5 text-[0.66rem] uppercase tracking-[0.07em] text-faint">
               Decision
@@ -97,7 +97,9 @@ export function LatestVerification() {
             </div>
             {primary ? (
               <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-                <span className="break-all font-mono text-[0.78rem]">{primary}</span>
+                {/* Evidence codes are single tokens: wrapping them mid-word
+                    makes them unreadable, so they shrink instead. */}
+                <span className="font-mono text-[0.74rem] leading-snug">{primary}</span>
                 {meta ? (
                   <span className="whitespace-nowrap rounded-sm border border-line-strong px-1.5 font-mono text-[0.63rem] text-faint">
                     {levelLabel(meta.level)}

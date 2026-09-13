@@ -89,10 +89,10 @@ function EnvironmentIndicator() {
 
   const title =
     phase === "online"
-      ? `Gateway online · settlement via ${facilitatorLabel(health?.facilitator)}`
+      ? `Gateway operational · ${network} · payments via ${facilitatorLabel(health?.facilitator)}`
       : phase === "unreachable"
-        ? "The gateway did not respond to a health check"
-        : "Checking gateway health";
+        ? "Gateway unavailable: it did not respond to a health check"
+        : "Checking gateway";
 
   return (
     <span
@@ -106,14 +106,14 @@ function EnvironmentIndicator() {
         {phase === "unreachable" ? "Offline" : "Testnet"}
       </span>
       <span className="hidden truncate sm:inline">
-        {phase === "unreachable" ? "Gateway unreachable" : network}
+        {phase === "unreachable" ? "Gateway unavailable" : network}
       </span>
       <span className="sr-only">
         {phase === "unreachable"
-          ? "Gateway unreachable"
+          ? "Gateway unavailable"
           : phase === "checking"
-            ? "Checking gateway health"
-            : `Gateway online, ${network}`}
+            ? "Checking gateway"
+            : `Gateway operational, ${network}`}
       </span>
     </span>
   );

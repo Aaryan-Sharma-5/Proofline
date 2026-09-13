@@ -6,14 +6,19 @@ import { LatestVerification } from "../components/LatestVerification";
 import { Field, Panel } from "../components/Panel";
 import { ResultPanel } from "../components/ResultPanel";
 import { UploadZone } from "../components/UploadZone";
+import { WorkflowStepper } from "../components/WorkflowStepper";
 import {
   facilitatorLabel,
   formatNetwork,
   useServiceStatus,
 } from "../hooks/useServiceStatus";
 import { useVerification } from "../hooks/useVerification";
-import { feeFromEvents } from "../hooks/useVerificationEvents";
-import type { ServiceHealth } from "../lib/types";
+import {
+  decidedAtFromEvents,
+  feeFromEvents,
+  furthestStageSeen,
+  paymentStatusFromEvents,
+} from "../hooks/useVerificationEvents";
 
 export function Home() {
   const {
@@ -44,26 +49,50 @@ export function Home() {
   }, [verifySample]);
 
   const fee = feeFromEvents(events.seen);
+  const paymentStatus = paymentStatusFromEvents(events.seen, events.finished);
+  const decidedAt = decidedAtFromEvents(events.seen);
+  const furthest = furthestStageSeen(events.seen);
 
   return (
     <>
-      <header className="border-b border-line pb-7">
-        <h1 className="text-[1.5rem] font-semibold tracking-[-0.015em]">
-          Verification workspace
+      <header className="border-b border-line pb-6">
+        <h1 className="text-[1.35rem] font-semibold tracking-[-0.012em]">
+          Verify a document
         </h1>
-        <p className="mt-2 max-w-[44rem] text-[0.94rem] leading-relaxed text-muted">
-          Submit a financial document for a deterministic, evidence-backed
-          integrity decision. Each run performs a real Hedera testnet payment
-          through a server-side reference agent, so no wallet is needed.
+        <p className="mt-2 max-w-[42rem] text-[0.92rem] leading-relaxed text-muted">
+          Pay per verification. Receive evidence-backed integrity checks before
+          an agent proceeds.
         </p>
+
+        <div className="mt-5">
+          <WorkflowStepper
+            phase={phase}
+            furthestSeen={furthest}
+            current={events.current}
+            finished={events.finished}
+            failed={phase === "failed"}
+          />
+        </div>
       </header>
 
-      {/* Two columns from 900px up: the capture viewport and a small laptop both
-          sit below Tailwind's lg, where a single column wastes the width. */}
       <div className="mt-7 grid grid-cols-1 items-start gap-6 min-[900px]:grid-cols-[minmax(0,21rem)_minmax(0,1fr)]">
         {/* Left rail: the request context. What goes in. */}
         <div className="min-[900px]:sticky min-[900px]:top-20">
-          <Panel title="Submit a document" className="mt-0">
+          <Panel title="Document" className="mt-0">
+            <UploadZone
+              onSubmit={(file) => void verifyUpload(file)}
+              disabled={busy}
+              running={busy}
+            />
+
+            <div className="my-5 flex items-center gap-3">
+              <span className="h-px flex-1 bg-line" />
+              <span className="font-mono text-[0.64rem] uppercase tracking-[0.08em] text-faint">
+                or try a sample
+              </span>
+              <span className="h-px flex-1 bg-line" />
+            </div>
+
             <div className="flex flex-col gap-2.5">
               <Button
                 id="btn-clear"
@@ -71,7 +100,7 @@ export function Home() {
                 onClick={() => void verifySample("clear")}
                 className="w-full"
               >
-                Try CLEAR sample
+                Verify CLEAR sample
               </Button>
               <Button
                 id="btn-review"
@@ -79,7 +108,7 @@ export function Home() {
                 onClick={() => void verifySample("review")}
                 className="w-full"
               >
-                Try REVIEW sample
+                Verify REVIEW sample
               </Button>
               <p className="text-[0.75rem] leading-relaxed text-faint">
                 Two bundled invoices: a clean baseline, and one requesting a
@@ -87,26 +116,37 @@ export function Home() {
               </p>
             </div>
 
-            <div className="my-5 flex items-center gap-3">
-              <span className="h-px flex-1 bg-line" />
-              <span className="font-mono text-[0.64rem] uppercase tracking-[0.08em] text-faint">
-                or
-              </span>
-              <span className="h-px flex-1 bg-line" />
-            </div>
-
-            <UploadZone onSubmit={(file) => void verifyUpload(file)} disabled={busy} />
-
-            <p className="mt-4 border-t border-line pt-3.5 text-[0.76rem] leading-relaxed text-faint">
+            <p className="mt-5 border-t border-line pt-3.5 text-[0.75rem] leading-relaxed text-faint">
               Documents are analysed and deleted. Only the decision, its
               evidence, and a content hash are retained.
             </p>
           </Panel>
 
+          {/* Each value is reported by the gateway's own /health. Rendered only
+              when it actually answered, so an outage shows nothing rather than
+              a stale or assumed configuration. */}
+          {health ? (
+            <Panel title="Service">
+              <div className="grid grid-cols-1 gap-y-4">
+                <Field
+                  label="Network"
+                  value={formatNetwork(health.network)}
+                  mono={false}
+                />
+                <Field
+                  label="Payment facilitator"
+                  value={facilitatorLabel(health.facilitator)}
+                  breakAnywhere={false}
+                />
+                <Field label="Payments to" value={health.payTo} />
+              </div>
+            </Panel>
+          ) : null}
+
           {phase !== "idle" && !busy ? (
             <div className="mt-4 rounded-[10px] border border-line bg-panel-2/70 px-4 py-3">
               <Button tone="secondary" onClick={reset} className="w-full">
-                Start a new verification
+                Verify another document
               </Button>
               <p className="mt-2.5 text-center text-[0.74rem] leading-relaxed text-faint">
                 Clears this result. The record stays in history.
@@ -115,10 +155,26 @@ export function Home() {
           ) : null}
         </div>
 
-        {/* Right: what came out. Decision, evidence, agent, settlement. */}
+        {/* Right: what came out. Decision, evidence, agent, payment, proof. */}
         <div className="min-w-0">
-          {phase === "idle" ? <IdleState health={health} /> : null}
+          {phase === "idle" ? <IdleState /> : null}
 
+          {phase === "complete" && result ? (
+            <ResultPanel
+              result={result}
+              fee={fee}
+              health={health}
+              paymentStatus={paymentStatus}
+              decidedAt={decidedAt}
+            />
+          ) : null}
+
+          {phase === "failed" && failure ? (
+            <FailurePanel message={failure.message} code={failure.code} />
+          ) : null}
+
+          {/* Lowest in the reading order: the raw lifecycle. While a run is in
+              flight it is the only thing to show, so it leads then. */}
           {phase !== "idle" ? (
             <AgentTimeline
               seen={events.seen}
@@ -127,22 +183,14 @@ export function Home() {
               subject={label}
             />
           ) : null}
-
-          {phase === "complete" && result ? (
-            <ResultPanel result={result} fee={fee} health={health} />
-          ) : null}
-
-          {phase === "failed" && failure ? (
-            <FailurePanel message={failure.message} code={failure.code} />
-          ) : null}
         </div>
       </div>
     </>
   );
 }
 
-/** Pre-run: what the service is, how it is configured, and what it last did. */
-function IdleState({ health }: { health: ServiceHealth | null }) {
+/** Pre-run: how the product works, and what it most recently decided. */
+function IdleState() {
   return (
     <>
       <Panel title="How a verification runs" className="mt-0">
@@ -166,7 +214,7 @@ function IdleState({ health }: { health: ServiceHealth | null }) {
             {
               n: "04",
               t: "The agent acts",
-              d: "CLEAR releases the downstream payment; REVIEW halts it for human review.",
+              d: "CLEAR releases the invoice payment; REVIEW halts it for human review.",
             },
           ].map((step) => (
             <li key={step.n} className="border-t border-line pt-3">
@@ -181,37 +229,22 @@ function IdleState({ health }: { health: ServiceHealth | null }) {
       </Panel>
 
       <LatestVerification />
-
-      {/* Each value is reported by the gateway's own /health. Rendered only
-          when it actually answered, so an outage shows nothing rather than a
-          stale or assumed configuration. */}
-      {health ? (
-        <Panel title="Service configuration">
-          <div className="grid grid-cols-1 gap-x-8 gap-y-5 sm:grid-cols-3">
-            <Field label="Network" value={formatNetwork(health.network)} mono={false} />
-            <Field
-              label="Settlement facilitator"
-              value={facilitatorLabel(health.facilitator)}
-              breakAnywhere={false}
-            />
-            <Field label="Verification fee paid to" value={health.payTo} />
-          </div>
-        </Panel>
-      ) : null}
     </>
   );
 }
 
 /**
- * A run that never produced a verdict. The backend's own error class is shown
+ * A run that never produced a decision. The backend's own error class is shown
  * rather than a generic message, and the outcome is labelled a non-outcome
- * rather than an accusation about the document (CLAUDE.md Section 16).
+ * rather than an accusation about the document.
  */
 function FailurePanel({ message, code }: { message: string; code?: string }) {
+  const isPaymentFailure = code === "PAYMENT_REQUIRED";
+
   return (
     <>
-      <Panel title="Decision" id="panel-result" step="01" connectsDown>
-        <div className="flex flex-wrap items-start gap-x-6 gap-y-4">
+      <Panel title="Verification decision" id="panel-result" connectsDown>
+        <div className="state-enter flex flex-wrap items-start gap-x-6 gap-y-4">
           <span
             id="decision"
             className="rounded-[7px] border border-fault-border bg-fault-bg px-4 py-2 font-mono text-[1.45rem] font-bold leading-none tracking-[0.03em] text-fault sm:text-[1.75rem]"
@@ -220,7 +253,7 @@ function FailurePanel({ message, code }: { message: string; code?: string }) {
           </span>
           <div className="min-w-0 flex-1">
             <div className="font-mono text-[0.76rem] font-semibold uppercase tracking-[0.08em] text-fault">
-              → Agent has no verdict to act on
+              → Consuming agent has no decision to act on
             </div>
             <p
               id="decision-note"
@@ -233,36 +266,37 @@ function FailurePanel({ message, code }: { message: string; code?: string }) {
         </div>
       </Panel>
 
-      <Panel title="Evidence" step="02" connected connectsDown>
+      <Panel title="What happened" connected connectsDown>
         <ul id="evidence" className="m-0 list-none p-0">
           <li>
             <span className="code font-mono text-[0.82rem] font-semibold">
               {code ?? "SERVICE_UNAVAILABLE"}
             </span>
-            <div className="explain mt-1 text-[0.87rem] leading-relaxed text-muted">
-              Reported by the verification service. No forensic evidence was
-              produced, because no analysis completed.
+            <div className="explain mt-1 max-w-[44rem] text-[0.87rem] leading-relaxed text-muted">
+              {isPaymentFailure
+                ? "The verification payment did not complete, so analysis never started. This is a payment failure, not a document failure."
+                : "Reported by the verification service. No forensic evidence was produced, because no analysis completed."}
             </div>
           </li>
         </ul>
       </Panel>
 
-      <Panel title="Agent action" step="03" connected connectsDown>
-        {/* No verdict means no permission to pay. */}
+      <Panel title="Consuming agent" connected connectsDown>
+        {/* No decision means no permission to pay. */}
         <div id="agent">
           <div className="font-mono text-[0.84rem] text-review">
-            Payment halted, no verdict to act on
+            Invoice payment halted, no decision to act on
           </div>
-          <p className="mt-2 text-[0.83rem] text-muted">
-            The agent fails closed: it releases a downstream payment only on an
+          <p className="mt-2 max-w-[40rem] text-[0.83rem] leading-relaxed text-muted">
+            The agent fails closed: it releases an invoice payment only on an
             explicit CLEAR.
           </p>
         </div>
       </Panel>
 
-      <Panel title="Verification fee" step="04" connected>
-        <div id="proof" className="text-[0.86rem] italic text-muted">
-          No settled fee was reported for this run.
+      <Panel title="Verification payment" connected>
+        <div id="proof" className="text-[0.86rem] text-muted">
+          No verification payment was settled for this run.
         </div>
       </Panel>
     </>

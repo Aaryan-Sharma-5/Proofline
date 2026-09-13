@@ -1,9 +1,10 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import { Button, LinkButton } from "../components/Button";
-import { Field, Panel } from "../components/Panel";
-import { fetchHistory, fetchVerification, hashscanUrl } from "../lib/api";
-import { describeEvidence, levelLabel } from "../lib/evidence";
+import { Panel } from "../components/Panel";
+import { VerificationArtifact } from "../components/VerificationArtifact";
+import { fetchHistory, fetchVerification } from "../lib/api";
+import { describeEvidence } from "../lib/evidence";
 import type { Decision, VerificationDetail, VerificationListItem } from "../lib/types";
 
 function formatWhen(iso: string): string {
@@ -15,13 +16,17 @@ const TH =
   "px-3 py-2.5 text-left text-[0.66rem] font-semibold uppercase tracking-[0.08em] text-faint";
 
 type DecisionFilter = "ALL" | Decision;
+type LoadState = "loading" | "ready" | "error";
 
 export function History() {
-  const [rows, setRows] = useState<VerificationListItem[] | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [rows, setRows] = useState<VerificationListItem[]>([]);
+  const [loadState, setLoadState] = useState<LoadState>("loading");
+  const [reloadKey, setReloadKey] = useState(0);
+
   const [selected, setSelected] = useState<string | null>(null);
   const [detail, setDetail] = useState<VerificationDetail | null>(null);
   const [detailError, setDetailError] = useState<string | null>(null);
+  const detailRef = useRef<HTMLElement>(null);
 
   const [query, setQuery] = useState("");
   const [decisionFilter, setDecisionFilter] = useState<DecisionFilter>("ALL");
@@ -29,32 +34,38 @@ export function History() {
 
   useEffect(() => {
     let cancelled = false;
+    setLoadState("loading");
     fetchHistory(50)
       .then((payload) => {
-        if (!cancelled) setRows(payload.verifications);
+        if (cancelled) return;
+        setRows(payload.verifications);
+        setLoadState("ready");
       })
       .catch(() => {
-        if (!cancelled) setError("Verification history is unavailable.");
+        if (cancelled) return;
+        setLoadState("error");
       });
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [reloadKey]);
 
   // Filter options are derived from the rows actually returned, so the list can
   // never offer a filter that matches nothing in this dataset.
   const evidenceOptions = useMemo(() => {
     const codes = new Set<string>();
-    for (const row of rows ?? []) for (const code of row.evidence_codes) codes.add(code);
+    for (const row of rows) for (const code of row.evidence_codes) codes.add(code);
     return Array.from(codes).sort();
   }, [rows]);
 
   const filtered = useMemo(() => {
-    if (!rows) return null;
     const needle = query.trim().toLowerCase();
     return rows.filter((row) => {
       if (decisionFilter !== "ALL" && row.decision !== decisionFilter) return false;
-      if (evidenceFilter !== "ALL" && !row.evidence_codes.includes(evidenceFilter as never))
+      if (
+        evidenceFilter !== "ALL" &&
+        !row.evidence_codes.includes(evidenceFilter as never)
+      )
         return false;
       if (!needle) return true;
       return (
@@ -80,54 +91,80 @@ export function History() {
     try {
       setDetail(await fetchVerification(id));
     } catch {
-      setDetailError("Could not load this record.");
+      setDetailError("Could not load this verification.");
     }
   }
 
+  // The detail renders below a long list, so selecting a row would otherwise
+  // update a region the reader cannot see. Honors reduced-motion.
+  useEffect(() => {
+    if (!selected) return;
+    detailRef.current?.scrollIntoView({
+      behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches
+        ? "auto"
+        : "smooth",
+      block: "start",
+    });
+  }, [selected]);
+
   return (
     <>
-      <header className="border-b border-line pb-7">
-        <h1 className="text-[1.5rem] font-semibold tracking-[-0.015em]">
-          Verification history
+      <header className="border-b border-line pb-6">
+        <h1 className="text-[1.35rem] font-semibold tracking-[-0.012em]">
+          Verification log
         </h1>
-        <p className="mt-2 max-w-[44rem] text-[0.94rem] leading-relaxed text-muted">
-          Previous verifications performed by this service. These records contain
-          no vendor names, beneficiary accounts, or extracted document fields;
-          those are never stored.
+        {/* Scoped to the verification record deliberately: the separate vendor
+            history the beneficiary check reads does hold vendor/account
+            references, so an unqualified "nothing is stored" would be false. */}
+        <p className="mt-2 max-w-[44rem] text-[0.92rem] leading-relaxed text-muted">
+          Every verification this service has performed, newest first. On a
+          verification record, vendor names, beneficiary accounts and extracted
+          document fields are never stored. The vendor history used by the
+          beneficiary check is held separately and is not exposed here.
         </p>
       </header>
 
-      {error ? (
-        <Panel title="History">
-          <EmptyState
-            title="History is unavailable"
-            body="The verification history service did not respond. The verifier itself is unaffected."
-            actions={<LinkButton href="/app">Open the verifier</LinkButton>}
-          />
+      {loadState === "loading" ? (
+        <Panel title="Verifications">
+          <p className="py-8 text-center text-[0.86rem] text-muted">
+            Loading verification log…
+          </p>
         </Panel>
       ) : null}
 
-      {rows && rows.length === 0 ? (
-        <Panel title="History">
+      {loadState === "error" ? (
+        <Panel title="Verifications">
           <EmptyState
-            title="No verifications recorded yet"
-            body="Every completed run is recorded here with its decision and evidence. Run a sample to create the first."
+            title="Proofline gateway is unavailable"
+            body="The verification log could not be loaded. The verifier itself is unaffected."
             actions={
               <>
-                <LinkButton href="/app?sample=clear">Try CLEAR sample</LinkButton>
-                <LinkButton href="/app?sample=review">Try REVIEW sample</LinkButton>
+                <Button tone="primary" onClick={() => setReloadKey((k) => k + 1)}>
+                  Retry
+                </Button>
+                <LinkButton href="/app">Verify a document</LinkButton>
               </>
             }
           />
         </Panel>
       ) : null}
 
-      {rows && rows.length > 0 ? (
+      {loadState === "ready" && rows.length === 0 ? (
+        <Panel title="Verifications">
+          <EmptyState
+            title="No verifications yet"
+            body="Every completed verification is recorded here with its decision and evidence."
+            actions={<LinkButton href="/app" tone="primary">Verify a document</LinkButton>}
+          />
+        </Panel>
+      ) : null}
+
+      {loadState === "ready" && rows.length > 0 ? (
         <Panel
-          title="Records"
+          title="Verifications"
           aside={
             <span className="font-mono text-[0.68rem] text-faint">
-              {filtered?.length ?? 0} of {rows.length}
+              {filtered.length} of {rows.length}
             </span>
           }
         >
@@ -144,7 +181,7 @@ export function History() {
                 type="search"
                 value={query}
                 onChange={(event) => setQuery(event.target.value)}
-                placeholder="Verification id or evidence code"
+                placeholder="Verification ID or evidence code"
                 className="w-full rounded-[6px] border border-line-strong bg-panel px-3 py-2 text-[0.83rem] text-ink placeholder:text-faint/80"
               />
             </div>
@@ -196,44 +233,90 @@ export function History() {
 
             {filtersActive ? (
               <Button tone="quiet" onClick={clearFilters}>
-                Clear
+                Clear filters
               </Button>
             ) : null}
           </div>
 
-          {filtered && filtered.length === 0 ? (
+          {filtered.length === 0 ? (
             <EmptyState
-              title="No records match these filters"
-              body="Every stored verification is still here; the current search and filters simply exclude them all."
+              title="No verifications match these filters"
+              body="Every stored verification is still here; the current search and filters exclude them all."
               actions={<Button onClick={clearFilters}>Clear filters</Button>}
             />
           ) : (
-            <div className="overflow-x-auto">
+            <>
+              {/* Mobile: a table of five columns cannot fit 375px without
+                  forcing the page to scroll sideways, so narrow screens get a
+                  list built for them rather than a shrunken table. */}
+              <ul className="m-0 list-none p-0 sm:hidden">
+                {filtered.map((row) => (
+                  <li key={row.verification_id}>
+                    <button
+                      type="button"
+                      onClick={() => void open(row.verification_id)}
+                      {...(selected === row.verification_id
+                        ? { "aria-current": "true" as const }
+                        : {})}
+                      className="w-full border-b border-line px-1 py-3.5 text-left transition-colors duration-150 hover:bg-panel-2 aria-current:bg-panel-2"
+                    >
+                      <div className="flex items-center justify-between gap-3">
+                        <DecisionChip decision={row.decision} />
+                        <span className="text-[0.75rem] text-faint">
+                          {formatWhen(row.created_at)}
+                        </span>
+                      </div>
+                      <div className="mt-2 break-all font-mono text-[0.74rem] text-muted">
+                        {row.verification_id}
+                      </div>
+                      <div className="mt-1.5">
+                        {row.evidence_codes.length === 0 ? (
+                          <span className="text-[0.76rem] text-faint">
+                            No evidence recorded
+                          </span>
+                        ) : (
+                          row.evidence_codes.map((code) => (
+                            <span
+                              key={code}
+                              className="block break-all font-mono text-[0.73rem] text-ink"
+                            >
+                              {code}
+                            </span>
+                          ))
+                        )}
+                      </div>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+
+              <div className="hidden overflow-x-auto sm:block">
               <table className="w-full border-collapse">
                 <caption className="sr-only">
-                  Verification records, newest first. Select a row for masked detail.
+                  Verifications, newest first. Select a row to view the full
+                  verification.
                 </caption>
                 <thead>
                   <tr className="border-b border-line">
                     <th className={TH} scope="col">
-                      Verification
+                      Decision
                     </th>
                     <th className={TH} scope="col">
-                      Decision
+                      Verification
                     </th>
                     <th className={TH} scope="col">
                       Evidence
                     </th>
                     <th className={TH} scope="col">
-                      Fee settlement
-                    </th>
-                    <th className={TH} scope="col">
                       Recorded
+                    </th>
+                    <th className={`${TH} text-right`} scope="col">
+                      <span className="sr-only">Action</span>
                     </th>
                   </tr>
                 </thead>
                 <tbody>
-                  {(filtered ?? []).map((row) => (
+                  {filtered.map((row) => (
                     <tr
                       key={row.verification_id}
                       tabIndex={0}
@@ -247,11 +330,11 @@ export function History() {
                       }}
                       className="cursor-pointer border-b border-line transition-colors duration-150 hover:bg-panel-2 aria-selected:bg-panel-2 aria-selected:shadow-[inset_2px_0_0_var(--color-ink)]"
                     >
-                      <td className="break-all p-3 align-top font-mono text-[0.77rem]">
-                        {row.verification_id}
-                      </td>
                       <td className="p-3 align-top">
                         <DecisionChip decision={row.decision} />
+                      </td>
+                      <td className="break-all p-3 align-top font-mono text-[0.77rem]">
+                        {row.verification_id}
                       </td>
                       <td className="p-3 align-top">
                         {row.evidence_codes.length === 0 ? (
@@ -268,139 +351,64 @@ export function History() {
                           ))
                         )}
                       </td>
-                      <td className="p-3 align-top">
-                        {row.payment_tx_id ? (
-                          <a
-                            href={hashscanUrl(row.payment_tx_id)}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            onClick={(event) => event.stopPropagation()}
-                            className="break-all font-mono text-[0.76rem] text-ink underline decoration-line-strong underline-offset-2 hover:decoration-ink"
-                          >
-                            {row.payment_tx_id}
-                          </a>
-                        ) : (
-                          <span
-                            className="text-faint"
-                            title="The analysis service does not receive the settled transaction id, so this column is not populated."
-                          >
-                            —
-                          </span>
-                        )}
-                      </td>
                       <td className="whitespace-nowrap p-3 align-top text-[0.8rem] text-muted">
                         {formatWhen(row.created_at)}
+                      </td>
+                      <td className="whitespace-nowrap p-3 text-right align-top">
+                        <span
+                          aria-hidden="true"
+                          className="text-[0.78rem] font-medium text-muted"
+                        >
+                          View →
+                        </span>
                       </td>
                     </tr>
                   ))}
                 </tbody>
               </table>
-            </div>
+              </div>
+            </>
           )}
         </Panel>
       ) : null}
 
       {selected ? (
-        <Panel
-          title="Record detail (masked)"
-          id="detail"
-          aside={
+        <section
+          ref={detailRef}
+          className="mt-9 scroll-mt-20 border-t border-line pt-7"
+          aria-live="polite"
+        >
+          <div className="mb-1 flex flex-wrap items-center justify-between gap-3">
+            <h2 className="text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-faint">
+              Verification detail
+            </h2>
             <Button tone="quiet" onClick={() => setSelected(null)}>
               Close
             </Button>
-          }
-        >
+          </div>
+
           {detailError ? (
-            <EmptyState
-              title="Could not load this record"
-              body="The record may have been removed, or the history service is unavailable."
-              actions={
-                <Button onClick={() => void open(selected)}>Try again</Button>
-              }
-            />
+            <Panel title="Verification detail">
+              <EmptyState
+                title="Could not load this verification"
+                body="The record may have been removed, or the gateway is unavailable."
+                actions={
+                  <Button tone="primary" onClick={() => void open(selected)}>
+                    Retry
+                  </Button>
+                }
+              />
+            </Panel>
           ) : detail ? (
-            <div className="grid grid-cols-1 gap-x-8 gap-y-5 sm:grid-cols-2 lg:grid-cols-3">
-              <Field label="Verification" value={detail.verification_id} />
-              <Field
-                label="Decision"
-                value={<DecisionChip decision={detail.decision} />}
-                mono={false}
-              />
-              <Field label="Recorded" value={formatWhen(detail.created_at)} mono={false} />
-              <Field label="Document hash" value={detail.document_hash} className="sm:col-span-2" />
-              <Field label="Service version" value={detail.service_version} />
-
-              <div className="min-w-0 sm:col-span-2 lg:col-span-3">
-                <div className="mb-1.5 text-[0.66rem] uppercase tracking-[0.07em] text-faint">
-                  Evidence
-                </div>
-                {detail.evidence_codes.length === 0 ? (
-                  <div className="text-[0.85rem] text-muted">None recorded.</div>
-                ) : (
-                  <ul className="m-0 list-none space-y-3 p-0">
-                    {detail.evidence_codes.map((code) => {
-                      const meta = describeEvidence(code);
-                      return (
-                        <li key={code}>
-                          <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1">
-                            <span className="font-mono text-[0.8rem] font-semibold">
-                              {code}
-                            </span>
-                            {meta ? (
-                              <span className="whitespace-nowrap rounded-sm border border-line-strong px-1.5 py-0.5 font-mono text-[0.63rem] text-faint">
-                                {levelLabel(meta.level)}
-                              </span>
-                            ) : null}
-                          </div>
-                          <div className="mt-1 text-[0.84rem] text-muted">
-                            {meta?.short ?? "Reported by the verification service"}
-                          </div>
-                        </li>
-                      );
-                    })}
-                  </ul>
-                )}
-              </div>
-
-              <div className="min-w-0 sm:col-span-2 lg:col-span-3">
-                <div className="mb-1.5 text-[0.66rem] uppercase tracking-[0.07em] text-faint">
-                  Fee settlement
-                </div>
-                {detail.payment_tx_id ? (
-                  <a
-                    href={hashscanUrl(detail.payment_tx_id)}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="break-all font-mono text-[0.79rem] text-ink underline decoration-line-strong underline-offset-2 hover:decoration-ink"
-                  >
-                    {detail.payment_tx_id} — view on HashScan →
-                  </a>
-                ) : (
-                  <div className="text-[0.84rem] text-muted">
-                    Not recorded on this row. The analysis service never receives
-                    the settled transaction id, so it cannot be stored here.
-                  </div>
-                )}
-              </div>
-
-              <Field
-                label="Audit record"
-                value={detail.hcs_message_id ?? "Not published; HCS is not implemented yet."}
-                mono={Boolean(detail.hcs_message_id)}
-                className="sm:col-span-2 lg:col-span-3"
-              />
-
-              <Field
-                label="Vendor / beneficiary"
-                value="Not stored. These fields are never retained."
-                mono={false}
-                className="sm:col-span-2 lg:col-span-3"
-              />
-            </div>
+            <VerificationArtifact detail={detail} />
           ) : (
-            <p className="text-[0.86rem] text-muted">Loading record…</p>
+            <Panel title="Verification detail">
+              <p className="py-6 text-center text-[0.86rem] text-muted">
+                Loading verification…
+              </p>
+            </Panel>
           )}
-        </Panel>
+        </section>
       ) : null}
     </>
   );
@@ -421,7 +429,7 @@ function DecisionChip({ decision }: { decision: Decision }) {
   );
 }
 
-/** Every empty state says why it is empty and what to do next (Section 15). */
+/** Every empty state says why it is empty and what to do next. */
 function EmptyState({
   title,
   body,

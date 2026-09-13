@@ -7,6 +7,7 @@ const MAX_BYTES = 10 * 1024 * 1024;
 
 export interface UploadRejection {
   code: "UNSUPPORTED_TYPE" | "TOO_LARGE" | "EMPTY";
+  title: string;
   message: string;
 }
 
@@ -17,18 +18,27 @@ export interface UploadRejection {
  */
 function screen(file: File): UploadRejection | null {
   if (file.size === 0) {
-    return { code: "EMPTY", message: "That file is empty." };
+    return {
+      code: "EMPTY",
+      title: "File is empty",
+      message: "The selected file contains no data.",
+    };
   }
   if (file.size > MAX_BYTES) {
     return {
       code: "TOO_LARGE",
+      title: "File is too large",
       message: `That file is ${formatBytes(file.size)}. The limit is ${formatBytes(MAX_BYTES)}.`,
     };
   }
   const isPdf =
     file.type === "application/pdf" || file.name.toLowerCase().endsWith(".pdf");
   if (!isPdf) {
-    return { code: "UNSUPPORTED_TYPE", message: "Only PDF documents are supported." };
+    return {
+      code: "UNSUPPORTED_TYPE",
+      title: "Unsupported file type",
+      message: "Proofline accepts PDF documents only.",
+    };
   }
   return null;
 }
@@ -36,14 +46,16 @@ function screen(file: File): UploadRejection | null {
 interface Props {
   onSubmit: (file: File) => void;
   disabled: boolean;
+  /** True while a verification is actually in flight. */
+  running?: boolean;
 }
 
 /**
- * The upload surface. A real drop target with an explicit selected-file state,
- * so submitting a document is a deliberate two-step action rather than a file
- * dialog that immediately spends a payment.
+ * The document intake surface. A real drop target with an explicit
+ * selected-file state, so submitting a document is a deliberate action rather
+ * than a file dialog that immediately spends a payment.
  */
-export function UploadZone({ onSubmit, disabled }: Props) {
+export function UploadZone({ onSubmit, disabled, running = false }: Props) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [file, setFile] = useState<File | null>(null);
   const [rejection, setRejection] = useState<UploadRejection | null>(null);
@@ -83,36 +95,61 @@ export function UploadZone({ onSubmit, disabled }: Props) {
           accept(event.dataTransfer.files?.[0]);
         }}
         className={[
-          "rounded-[8px] border border-dashed px-5 py-6 text-center transition-colors duration-150",
-          dragging ? "border-ink bg-panel-2" : "border-line-strong bg-panel-2/60",
-          disabled ? "opacity-55" : "",
+          "rounded-[8px] border px-5 py-6 transition-colors duration-150",
+          file ? "border-solid border-line-strong bg-panel" : "border-dashed",
+          dragging ? "border-ink bg-panel-2" : file ? "" : "border-line-strong bg-panel-2/60",
+          disabled && !running ? "opacity-55" : "",
         ].join(" ")}
       >
         {file ? (
-          <div className="flex flex-wrap items-center justify-center gap-x-4 gap-y-3 text-left">
-            <div className="min-w-0">
-              <div className="wrap-break-word break-all font-mono text-[0.82rem] text-ink">
+          <div>
+            <dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-4 gap-y-1.5">
+              <dt className="text-[0.64rem] uppercase tracking-[0.07em] text-faint">
+                File
+              </dt>
+              <dd className="m-0 wrap-break-word break-all font-mono text-[0.81rem] text-ink">
                 {file.name}
+              </dd>
+
+              <dt className="text-[0.64rem] uppercase tracking-[0.07em] text-faint">
+                Type
+              </dt>
+              <dd className="m-0 font-mono text-[0.78rem] text-muted">
+                {file.type || "application/pdf"}
+              </dd>
+
+              <dt className="text-[0.64rem] uppercase tracking-[0.07em] text-faint">
+                Size
+              </dt>
+              <dd className="m-0 font-mono text-[0.78rem] text-muted">
+                {formatBytes(file.size)}
+              </dd>
+
+              <dt className="text-[0.64rem] uppercase tracking-[0.07em] text-faint">
+                Status
+              </dt>
+              <dd className="m-0 font-mono text-[0.78rem]">
+                {running ? (
+                  <span className="text-review">Verification in progress</span>
+                ) : (
+                  <span className="text-clear">Ready to verify</span>
+                )}
+              </dd>
+            </dl>
+
+            {!running ? (
+              <div className="mt-4 flex flex-wrap items-center gap-2">
+                <Button tone="primary" disabled={disabled} onClick={() => onSubmit(file)}>
+                  Verify document
+                </Button>
+                <Button tone="quiet" disabled={disabled} onClick={clear}>
+                  Remove
+                </Button>
               </div>
-              <div className="mt-1 text-[0.75rem] text-faint">
-                PDF · {formatBytes(file.size)} · ready to verify
-              </div>
-            </div>
-            <div className="flex items-center gap-2">
-              <Button
-                tone="primary"
-                disabled={disabled}
-                onClick={() => onSubmit(file)}
-              >
-                Verify this document
-              </Button>
-              <Button tone="quiet" disabled={disabled} onClick={clear}>
-                Remove
-              </Button>
-            </div>
+            ) : null}
           </div>
         ) : (
-          <>
+          <div className="text-center">
             <p className="text-[0.87rem] text-muted">
               Drop a PDF invoice here, or{" "}
               {/* The label is the keyboard-reachable control; the input stays in
@@ -128,14 +165,14 @@ export function UploadZone({ onSubmit, disabled }: Props) {
                 }}
                 className="cursor-pointer rounded-[3px] font-medium text-ink underline decoration-line-strong underline-offset-2 hover:decoration-ink"
               >
-                choose a file
+                browse
               </label>
               .
             </p>
             <p className="mt-2 font-mono text-[0.7rem] uppercase tracking-[0.06em] text-faint">
               PDF only · up to {formatBytes(MAX_BYTES)}
             </p>
-          </>
+          </div>
         )}
 
         <input
@@ -165,24 +202,22 @@ export function UploadZone({ onSubmit, disabled }: Props) {
       </div>
 
       {rejection ? (
-        <p
+        <div
           role="status"
-          className="mt-2.5 flex items-start gap-2 text-[0.82rem] text-review"
+          className="mt-2.5 rounded-[6px] border border-review-border bg-review-bg px-3.5 py-3"
         >
-          <span aria-hidden="true" className="mt-[0.15rem] font-mono text-[0.7rem]">
-            ✕
-          </span>
-          <span>
+          <div className="text-[0.82rem] font-medium text-review">{rejection.title}</div>
+          <p className="mt-1 text-[0.81rem] leading-relaxed text-muted">
             {rejection.message}{" "}
             <button
               type="button"
               onClick={() => inputRef.current?.click()}
-              className="underline decoration-review/40 underline-offset-2 hover:decoration-review"
+              className="rounded-[3px] font-medium text-ink underline decoration-line-strong underline-offset-2 hover:decoration-ink"
             >
               Choose another file
             </button>
-          </span>
-        </p>
+          </p>
+        </div>
       ) : null}
     </div>
   );
