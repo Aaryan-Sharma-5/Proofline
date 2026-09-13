@@ -22,6 +22,7 @@ services:
       - proofline-data:/data
     environment:
       ANALYSIS_HOST: 0.0.0.0
+      PROOFLINE_ALLOW_PUBLIC_BIND: "1"
       ANALYSIS_PORT: "8099"
       DATABASE_URL: /data/proofline.db
     # No `ports:`. This is the isolation control; do not add one.
