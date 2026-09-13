@@ -12,8 +12,15 @@ async function headings(page: Page) {
   );
 }
 
+/**
+ * Coarse sweep over every focusable element.
+ *
+ * Caveat: this uses programmatic .focus(), which does NOT match :focus-visible,
+ * so elements styled only via :focus-visible can be reported as missing a ring
+ * when a keyboard user would in fact see one. Treat a MISS here as a lead to
+ * confirm with focus-probe.ts, which presses real Tab keys, not as a defect.
+ */
 async function focusRing(page: Page): Promise<{ total: number; missing: string[] }> {
-  // Tab through the document and confirm each stop paints a visible outline.
   return page.evaluate(() => {
     const stops = Array.from(
       document.querySelectorAll<HTMLElement>(
@@ -72,7 +79,7 @@ for (const path of ["/app", "/history", "/"]) {
   console.log(`  heading order   : ${hs.slice(0, 8).join(" | ")}`);
   console.log(`  tab stops       : ${focus.total}`);
   console.log(
-    `  missing focus   : ${focus.missing.length === 0 ? "none" : focus.missing.join(", ")}`,
+    `  focus (coarse)  : ${focus.missing.length === 0 ? "all stops ringed" : `${focus.missing.length} to confirm with focus-probe.ts (:focus-visible)`}`,
   );
   console.log(
     `  unlabelled ctrl : ${unlabelled.length === 0 ? "none" : unlabelled.join(", ")}`,

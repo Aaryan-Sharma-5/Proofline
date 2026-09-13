@@ -111,7 +111,7 @@ function Hero() {
 
         <div className="mt-9 flex flex-wrap items-center gap-2.5">
           <a href="/app" className={PRIMARY}>
-            Run a live verification →
+            Verify a document →
           </a>
           <a href="/docs" className={SECONDARY}>
             Explore the API

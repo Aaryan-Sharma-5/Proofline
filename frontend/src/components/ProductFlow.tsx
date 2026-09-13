@@ -63,13 +63,13 @@ function Branch() {
         <Outcome
           decision="CLEAR"
           action="PROCEED"
-          note="No material anomaly detected. The agent releases the payment."
+          note="No material anomaly detected. The agent releases the invoice payment."
           tone="clear"
         />
         <Outcome
           decision="REVIEW"
           action="HALT"
-          note="A finding needs human attention. The agent holds the payment."
+          note="A finding needs human attention. The agent holds the invoice payment."
           tone="review"
         />
       </div>
