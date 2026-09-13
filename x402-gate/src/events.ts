@@ -7,6 +7,11 @@ export const STAGES = [
   "PAYING",
   "PAID",
   "ANALYZING",
+  // Emitted only when the analysis service reports that deterministic
+  // extraction could not recover every required field and the bounded model
+  // fallback ran. A deterministic verification never emits this stage, so its
+  // absence is meaningful and it is never synthesized to decorate a timeline.
+  "AI_EXTRACTION",
   "DECISION",
   "AGENT_ACTION",
   "AUDIT",

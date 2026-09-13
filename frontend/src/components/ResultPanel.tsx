@@ -98,6 +98,16 @@ export function ResultPanel({
           </div>
         </div>
 
+        {verification.extraction_method === "llm_assisted" ? (
+          <p className="mt-4 rounded-[6px] border border-line bg-panel-2 px-3 py-2.5 text-[0.8rem] leading-relaxed text-muted">
+            <span className="font-medium text-ink">AI-assisted extraction used.</span>{" "}
+            Some required fields could not be read directly from the document, so a
+            model recovered them. Recovered values were validated and passed into
+            the same deterministic checks used for every other verification — the
+            model did not produce this decision.
+          </p>
+        ) : null}
+
         <MetadataStrip
           verificationId={verification.verification_id ?? null}
           decidedAt={decidedAt}

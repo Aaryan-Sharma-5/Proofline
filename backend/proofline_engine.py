@@ -19,6 +19,35 @@ import pymupdf
 import pytesseract
 from PIL import Image
 
+import llm_extraction
+from extraction_patterns import (
+    ACCOUNT_LABEL_ONLY,
+    ACCOUNT_PATTERNS,
+    ACCOUNT_VALUE_ONLY,
+    AMOUNT_BODY,
+    DATE_LABEL_ONLY,
+    DATE_PATTERNS,
+    DATE_VALUE_ONLY,
+    INVOICE_NUMBER_LABEL_ONLY,
+    INVOICE_NUMBER_PATTERNS,
+    INVOICE_NUMBER_VALUE_ONLY,
+    TOTAL_LABEL_ONLY,
+    TOTAL_PATTERNS,
+    TOTAL_VALUE_ONLY,
+    find_labelled_value,
+    normalize_account_value,
+    normalize_currency,
+    normalize_date,
+    parse_amount,
+)
+from llm_extraction import (
+    EXTRACTOR_DETERMINISTIC,
+    EXTRACTOR_LLM,
+    METHOD_DETERMINISTIC,
+    METHOD_INCOMPLETE,
+    METHOD_LLM_ASSISTED,
+)
+
 SERVICE_VERSION = "proofline-engine/0.1.0-milestone1"
 
 HERE = pathlib.Path(__file__).resolve().parent
@@ -50,6 +79,23 @@ EVIDENCE_LEVELS = {
 }
 
 
+# Detail keys that carry values copied out of the document itself. They are
+# retained internally — the CLI prints them, and they are what makes a finding
+# checkable by an operator holding the document — but they are not served to a
+# caller. Masking by allowlist would silently drop a new diagnostic key; masking
+# by denylist keeps diagnostics flowing and requires that anything identifying
+# be named here deliberately.
+SENSITIVE_DETAIL_KEYS = frozenset(
+    {
+        "vendor",
+        "requested_account",
+        "account",
+        "beneficiary_account",
+        "invoice_number",
+    }
+)
+
+
 @dataclass(frozen=True)
 class Evidence:
     code: str
@@ -63,6 +109,25 @@ class Evidence:
             "level": self.level.value,
             "summary": self.summary,
             "detail": self.detail,
+        }
+
+    def to_public_dict(self) -> dict:
+        """The served form: the finding, without the document values behind it.
+
+        A caller learns that the payout account differs from the one previously
+        observed for this vendor, and how many accounts have been observed. They
+        do not learn the vendor name or either account number back from us —
+        they are holding the document those came from.
+        """
+        return {
+            "code": self.code,
+            "level": self.level.value,
+            "summary": self.summary,
+            "detail": {
+                key: value
+                for key, value in self.detail.items()
+                if key not in SENSITIVE_DETAIL_KEYS
+            },
         }
 
 # Deterministic policy
@@ -141,6 +206,10 @@ class Extraction:
     stated_total: float | None = None
     line_items: list[LineItem] = field(default_factory=list)
     ocr_mean_confidence: float | None = None
+    currency: str | None = None
+    # Which extractor produced each recovered field. Internal bookkeeping: it
+    # records how a value was read, never what the value means.
+    provenance: dict[str, str] = field(default_factory=dict)
 
     def missing_fields(self) -> list[str]:
         missing = []
@@ -154,6 +223,21 @@ class Extraction:
     def complete(self) -> bool:
         return not self.missing_fields()
 
+    @property
+    def extraction_method(self) -> str:
+        """How this document's fields were read.
+
+        Informational only. It carries no weight in POLICY_WEIGHTS, is not an
+        evidence code, and is not consulted by evaluate_policy. A document read
+        with model assistance is judged by exactly the same checks against
+        exactly the same thresholds as one read deterministically.
+        """
+        if self.missing_fields():
+            return METHOD_INCOMPLETE
+        if any(source == EXTRACTOR_LLM for source in self.provenance.values()):
+            return METHOD_LLM_ASSISTED
+        return METHOD_DETERMINISTIC
+
     def to_dict(self) -> dict:
         return {
             "text_source": self.text_source,
@@ -163,8 +247,11 @@ class Extraction:
             "invoice_date": self.invoice_date,
             "beneficiary_account": self.beneficiary_account,
             "stated_total": self.stated_total,
+            "currency": self.currency,
             "line_items": [item.to_dict() for item in self.line_items],
             "missing_fields": self.missing_fields(),
+            "extraction_method": self.extraction_method,
+            "field_provenance": dict(self.provenance),
         }
 
 
@@ -243,33 +330,22 @@ def _words_from_ocr(page: pymupdf.Page) -> tuple[list[_Word], float | None]:
     return words, mean_confidence
 
 
-_AMOUNT = r"\d[\d,]*\.\d{2}"
+# Line items use the same money grammar as every other amount, so a table
+# rendered in the European convention (40,00) parses like an Anglo one (40.00).
+# This is a number-format rule, not a language rule: it needs no per-language
+# vocabulary and cannot introduce a locale-dependent misreading, because a
+# two-digit minor unit makes the last separator the decimal point either way.
+_AMOUNT = AMOUNT_BODY
 _LINE_ITEM_RE = re.compile(
     rf"^(?P<description>\S.*?)\s+(?P<quantity>\d{{1,5}})\s+"
     rf"(?P<unit_price>{_AMOUNT})\s+(?P<amount>{_AMOUNT})$"
 )
-_TOTAL_RE = re.compile(rf"TOTAL\s+DUE\s*:?\s*({_AMOUNT})", re.IGNORECASE)
-_INVOICE_NUMBER_RE = re.compile(
-    r"Invoice\s+Number\s*:?\s*([A-Za-z0-9][A-Za-z0-9\-/]{3,})", re.IGNORECASE
-)
-_INVOICE_DATE_RE = re.compile(
-    r"Invoice\s+Date\s*:?\s*(\d{4}-\d{2}-\d{2})", re.IGNORECASE
-)
-_ACCOUNT_RE = re.compile(
-    r"Remit\s+To\s+Account\s*:?\s*([0-9][0-9\- ]{6,}[0-9])", re.IGNORECASE
-)
 
 
-def _parse_amount(text: str) -> float:
-    return float(text.replace(",", "").replace(" ", ""))
-
-
-def _first_match(lines: list[str], pattern: re.Pattern[str]) -> str | None:
-    for line in lines:
-        match = pattern.search(line)
-        if match:
-            return match.group(1).strip()
-    return None
+def _parse_amount(text: str) -> float | None:
+    """Shared with the label patterns, so a line item and a total never disagree
+    about what a rendered number means."""
+    return parse_amount(text)
 
 
 def _parse_vendor(lines: list[str]) -> str | None:
@@ -288,12 +364,19 @@ def _parse_line_items(lines: list[str]) -> list[LineItem]:
         match = _LINE_ITEM_RE.match(line.strip())
         if not match:
             continue
+        unit_price = _parse_amount(match.group("unit_price"))
+        amount = _parse_amount(match.group("amount"))
+        # A row whose numbers do not parse cleanly is dropped rather than
+        # recorded with a guessed value. AMOUNT_MISMATCH sums these, so one
+        # coerced figure here would become a false discrepancy against the total.
+        if unit_price is None or amount is None:
+            continue
         items.append(
             LineItem(
                 description=match.group("description").strip(),
                 quantity=int(match.group("quantity")),
-                unit_price=_parse_amount(match.group("unit_price")),
-                amount=_parse_amount(match.group("amount")),
+                unit_price=unit_price,
+                amount=amount,
             )
         )
     return items
@@ -336,20 +419,122 @@ def extract(document: pymupdf.Document) -> Extraction:
     )
     lines = _group_words_into_lines(words)
 
-    stated_total_text = _first_match(lines, _TOTAL_RE)
-    account = _first_match(lines, _ACCOUNT_RE)
+    extraction = _extract_deterministic(lines, source, mean_confidence)
+    _apply_llm_fallback(extraction)
+    return extraction
 
-    return Extraction(
+
+def _extract_deterministic(
+    lines: list[str], source: str, mean_confidence: float | None
+) -> Extraction:
+    """Read every field with label-anchored patterns only. No model involved."""
+    extraction = Extraction(
         text_source=source,
         lines=lines,
-        vendor=_parse_vendor(lines),
-        invoice_number=_first_match(lines, _INVOICE_NUMBER_RE),
-        invoice_date=_first_match(lines, _INVOICE_DATE_RE),
-        beneficiary_account=account.strip() if account else None,
-        stated_total=_parse_amount(stated_total_text) if stated_total_text else None,
         line_items=_parse_line_items(lines),
         ocr_mean_confidence=mean_confidence,
     )
+
+    vendor = _parse_vendor(lines)
+    if vendor:
+        extraction.vendor = vendor
+
+    number_match = find_labelled_value(
+        lines, INVOICE_NUMBER_PATTERNS, INVOICE_NUMBER_LABEL_ONLY,
+        INVOICE_NUMBER_VALUE_ONLY,
+    )
+    if number_match:
+        extraction.invoice_number = number_match.group("value").strip()
+
+    date_match = find_labelled_value(
+        lines, DATE_PATTERNS, DATE_LABEL_ONLY, DATE_VALUE_ONLY
+    )
+    if date_match:
+        extraction.invoice_date = normalize_date(date_match.group("value"))
+
+    account_match = find_labelled_value(
+        lines, ACCOUNT_PATTERNS, ACCOUNT_LABEL_ONLY, ACCOUNT_VALUE_ONLY
+    )
+    if account_match:
+        extraction.beneficiary_account = normalize_account_value(
+            account_match.group("value")
+        )
+
+    total_match = find_labelled_value(
+        lines, TOTAL_PATTERNS, TOTAL_LABEL_ONLY, TOTAL_VALUE_ONLY
+    )
+    if total_match:
+        extraction.stated_total = parse_amount(total_match.group("value"))
+        groups = total_match.groupdict()
+        extraction.currency = normalize_currency(
+            groups.get("currency"), groups.get("symbol")
+        )
+
+    for name in REQUIRED_FIELDS:
+        value = getattr(extraction, name)
+        if value is not None and not (isinstance(value, list) and not value):
+            extraction.provenance[name] = EXTRACTOR_DETERMINISTIC
+
+    return extraction
+
+
+# Which extraction field each recoverable model field may fill. Line items are
+# absent by design: they are the input to AMOUNT_MISMATCH, and a model that
+# supplied both the total and the items it is checked against could satisfy that
+# check with two values it produced itself. The comparison must always be
+# between something the document states and something the document itemises.
+_LLM_FIELD_MAP = {
+    "vendor_name": "vendor",
+    "invoice_number": "invoice_number",
+    "invoice_date": "invoice_date",
+    "total_amount": "stated_total",
+    "beneficiary_account": "beneficiary_account",
+}
+
+
+def _apply_llm_fallback(extraction: Extraction) -> None:
+    """Fill fields the deterministic pass could not read. Never overwrites.
+
+    The reconciliation rule is deliberately the simplest one that is safe: a
+    recovered value is accepted only where the deterministic extractor produced
+    nothing at all. There is no precedence contest, no confidence comparison and
+    no merge — where the two could disagree, the deterministic value wins by
+    construction because the model's value is never consulted.
+
+    A clean document reaches this function with nothing missing and returns
+    immediately, so the normal path makes no network call.
+    """
+    missing = extraction.missing_fields()
+    if not missing:
+        return
+    if not llm_extraction.is_enabled():
+        return
+
+    # Only fields the fallback is allowed to fill, mapped to its own names.
+    requestable = [
+        llm_name
+        for llm_name, field_name in _LLM_FIELD_MAP.items()
+        if field_name in missing
+    ]
+    if not requestable:
+        return
+
+    context = llm_extraction.build_context(extraction.lines)
+    recovered = llm_extraction.recover_fields(context, requestable)
+
+    for llm_name, value in recovered.items():
+        field_name = _LLM_FIELD_MAP.get(llm_name)
+        if field_name is None:
+            continue
+        # The invariant, enforced at the point of assignment rather than trusted
+        # upstream: a field that already has a value is never reassigned.
+        if getattr(extraction, field_name) is not None:
+            continue
+        setattr(extraction, field_name, value)
+        extraction.provenance[field_name] = EXTRACTOR_LLM
+
+    if "currency" in recovered and extraction.currency is None:
+        extraction.currency = recovered["currency"]
 
 # Vendor history, Proofline's own prior observations
 def normalize_vendor_key(name: str) -> str:
@@ -394,8 +579,25 @@ class VendorHistory:
 AMOUNT_TOLERANCE = 0.01
 
 def check_amount_mismatch(extraction: Extraction) -> Evidence | None:
-    """Compare the stated total against the sum of the extracted line items."""
+    """Compare the stated total against the sum of the extracted line items.
+
+    Both operands must come from the *same* extractor. A model-recovered total
+    is not comparable with deterministically-parsed line items: the two can
+    legitimately measure different quantities — a gross total against net line
+    items differs by exactly the tax — and the resulting discrepancy would be an
+    artifact of how the document was read rather than anything about the
+    document. Rather than reconcile that (which would mean inferring a tax
+    treatment the engine does not extract), the check declines to run.
+
+    Declining is safe and self-reporting: with the check unevaluated the
+    document simply carries no Level A amount evidence, exactly as it would if
+    the total had not been readable at all. What it must never do is manufacture
+    a REVIEW out of a units mismatch.
+    """
     if extraction.stated_total is None or not extraction.line_items:
+        return None
+
+    if extraction.provenance.get("stated_total") != EXTRACTOR_DETERMINISTIC:
         return None
 
     line_item_sum = round(sum(item.amount for item in extraction.line_items), 2)
@@ -593,6 +795,12 @@ class VerificationResult:
     service_version: str
 
     def to_dict(self, include_extraction: bool = True) -> dict:
+        """The complete internal result, including extracted field values.
+
+        Used by the CLI and the test suite. `include_extraction=True` returns
+        vendor, account and line items, so this form must not be served to a
+        caller — see `to_public_dict`.
+        """
         payload = {
             "document_hash": self.document_hash,
             "decision": self.decision,
@@ -605,6 +813,31 @@ class VerificationResult:
         if include_extraction:
             payload["extraction"] = self.extraction.to_dict()
         return payload
+
+    def to_public_dict(self) -> dict:
+        """The projection served by /analyze, and through it by /verify.
+
+        An allowlist, so a field added to `Extraction` later is not published by
+        default. Deliberately absent: `policy_score` (internal machinery, never
+        a public confidence figure) and every extracted value — vendor,
+        beneficiary account, invoice number, amounts and line items. A caller
+        gets the decision, the evidence that produced it, and how the document
+        was read; the field values are the caller's own document, which they
+        already have, and which Proofline does not hand back.
+
+        `extraction_method` is reported because a caller is entitled to know
+        that a field was recovered by a model rather than read directly. It is
+        not evidence and carries no weight in the decision.
+        """
+        return {
+            "document_hash": self.document_hash,
+            "decision": self.decision,
+            "evidence_codes": self.evidence_codes,
+            "evidence": [item.to_public_dict() for item in self.evidence],
+            "service_version": self.service_version,
+            "extraction_method": self.extraction.extraction_method,
+            "missing_fields": self.extraction.missing_fields(),
+        }
 
 
 class InvalidDocument(Exception):
