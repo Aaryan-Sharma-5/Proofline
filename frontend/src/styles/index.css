@@ -54,6 +54,36 @@
   .stage-pulse {
     animation: stage-pulse 1.1s ease-in-out infinite;
   }
+
+  /* Reveal used when real state arrives: a decision, a result panel. Never a
+     loading placeholder, so it cannot imply progress that is not happening. */
+  .state-enter {
+    animation: state-enter 0.18s ease-out both;
+  }
+}
+
+/* Motion communicates state changes only. Under reduced-motion every animation
+   resolves immediately to its end state rather than being removed, so nothing
+   depends on movement to become visible. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+@keyframes state-enter {
+  from {
+    opacity: 0;
+    transform: translateY(3px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
 }
 
 /* Landing hero artifact. motion-safe: only, so reduced-motion users see it settled. */

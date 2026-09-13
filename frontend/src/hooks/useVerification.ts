@@ -83,6 +83,16 @@ export function useVerification() {
     [start],
   );
 
+  /** Returns the workspace to its pre-run state. Never cancels an in-flight run. */
+  const reset = useCallback(() => {
+    if (runningRef.current) return;
+    setPhase("idle");
+    setResult(null);
+    setFailure(null);
+    setLabel(null);
+    events.reset();
+  }, [events]);
+
   return {
     phase,
     result,
@@ -91,6 +101,7 @@ export function useVerification() {
     events,
     verifySample,
     verifyUpload,
+    reset,
     busy: phase === "running",
   };
 }

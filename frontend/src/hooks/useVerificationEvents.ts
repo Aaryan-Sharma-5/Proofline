@@ -27,6 +27,20 @@ export interface UseVerificationEvents {
   reset: () => void;
 }
 
+/**
+ * The verification fee as the server stated it in the 402 challenge.
+ *
+ * Read from the event rather than hardcoded in the client: the price is server
+ * configuration (PRICE_VERIFY), so a literal here would duplicate it and drift
+ * silently when it changes.
+ */
+export function feeFromEvents(seen: Map<Stage, VerificationEvent>): string | null {
+  const price = seen.get("PAYMENT_REQUIRED")?.detail?.price;
+  if (typeof price === "string" && price.trim()) return price.trim();
+  if (typeof price === "number") return String(price);
+  return null;
+}
+
 export function useVerificationEvents(): UseVerificationEvents {
   const [seen, setSeen] = useState<Map<Stage, VerificationEvent>>(new Map());
   const [current, setCurrent] = useState<Stage | null>(null);
