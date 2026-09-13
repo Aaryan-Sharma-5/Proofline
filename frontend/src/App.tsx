@@ -1,11 +1,13 @@
 import { useEffect, useState } from "react";
 
+import { AppShell } from "./components/AppShell";
 import { History } from "./pages/History";
 import { Home } from "./pages/Home";
 import { Landing } from "./pages/Landing";
+import { normalizePath } from "./lib/routes";
 
 function currentPath(): string {
-  return window.location.pathname.replace(/\/+$/, "") || "/";
+  return normalizePath(window.location.pathname);
 }
 
 export function App() {
@@ -24,28 +26,6 @@ export function App() {
   if (isLanding) return <Landing />;
 
   return (
-    <div className="mx-auto max-w-[1200px] px-6 pb-16 pt-14 sm:px-8">
-      {isHistory ? <History /> : <Home />}
-
-      <footer className="mt-10 text-[0.8rem] text-faint">
-        Deterministic evidence-backed decisions.{" "}
-        <a href="/" className="text-muted underline underline-offset-2 hover:text-ink">
-          About Proofline
-        </a>
-        {isHistory ? null : (
-          <>
-            {" "}
-            ·{" "}
-            <a href="/history" className="text-muted underline underline-offset-2 hover:text-ink">
-              Verification history
-            </a>{" "}
-            ·{" "}
-            <a href="/docs" className="text-muted underline underline-offset-2 hover:text-ink">
-              API documentation
-            </a>
-          </>
-        )}
-      </footer>
-    </div>
+    <AppShell path={path}>{isHistory ? <History /> : <Home />}</AppShell>
   );
 }

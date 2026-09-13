@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import { fetchHistory } from "../lib/api";
 import { describeEvidence, levelLabel } from "../lib/evidence";
 import type { VerificationListItem } from "../lib/types";
+import { Panel } from "./Panel";
 
 /** Relative age, so the block reads as "latest" rather than as a raw log line. */
 function formatAge(iso: string): string {
@@ -45,31 +46,33 @@ export function LatestVerification() {
   const meta = primary ? describeEvidence(primary) : null;
 
   return (
-    <section
+    <Panel
+      title="Latest verification"
       id="latest-verification"
-      aria-labelledby="latest-verification-heading"
-      className="mt-8 rounded-[10px] border border-line bg-panel px-6 py-5"
+      aside={
+        row ? (
+          <a
+            href="/history"
+            className="whitespace-nowrap text-[0.78rem] font-medium text-ink underline decoration-line-strong underline-offset-2 hover:decoration-ink"
+          >
+            View all →
+          </a>
+        ) : null
+      }
     >
-      <h2
-        id="latest-verification-heading"
-        className="mb-4 text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-faint"
-      >
-        Latest verification
-      </h2>
-
       {row === null ? (
-        <p className="text-[0.87rem] text-muted">
-          No verifications recorded yet. Run one of the samples above to create the first.
+        <p className="text-[0.86rem] text-muted">
+          No verifications recorded yet. Run one of the samples to create the first.
         </p>
       ) : (
-        <div className="flex flex-wrap items-start gap-x-8 gap-y-4">
+        <div className="grid grid-cols-1 gap-x-8 gap-y-4 sm:grid-cols-2 lg:grid-cols-4">
           <div className="min-w-0">
-            <div className="mb-1.5 text-[0.68rem] uppercase tracking-[0.06em] text-faint">
+            <div className="mb-1.5 text-[0.66rem] uppercase tracking-[0.07em] text-faint">
               Decision
             </div>
             <span
               className={[
-                "inline-block rounded-sm border px-2 py-0.5 font-mono text-[0.72rem] font-semibold",
+                "inline-block rounded-sm border px-2 py-0.5 font-mono text-[0.71rem] font-semibold",
                 row.decision === "CLEAR"
                   ? "border-clear-border bg-clear-bg text-clear"
                   : "border-review-border bg-review-bg text-review",
@@ -80,55 +83,47 @@ export function LatestVerification() {
           </div>
 
           <div className="min-w-0">
-            <div className="mb-1.5 text-[0.68rem] uppercase tracking-[0.06em] text-faint">
+            <div className="mb-1.5 text-[0.66rem] uppercase tracking-[0.07em] text-faint">
               Verification
             </div>
-            <div className="break-all font-mono text-[0.8rem]">{row.verification_id}</div>
+            <div className="break-all font-mono text-[0.78rem]">
+              {row.verification_id}
+            </div>
           </div>
 
           <div className="min-w-0">
-            <div className="mb-1.5 text-[0.68rem] uppercase tracking-[0.06em] text-faint">
+            <div className="mb-1.5 text-[0.66rem] uppercase tracking-[0.07em] text-faint">
               Evidence
             </div>
             {primary ? (
               <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-                <span className="break-all font-mono text-[0.8rem]">{primary}</span>
+                <span className="break-all font-mono text-[0.78rem]">{primary}</span>
                 {meta ? (
-                  <span className="whitespace-nowrap rounded border border-line-strong px-1.5 font-mono text-[0.66rem] text-faint">
+                  <span className="whitespace-nowrap rounded-sm border border-line-strong px-1.5 font-mono text-[0.63rem] text-faint">
                     {levelLabel(meta.level)}
                   </span>
                 ) : null}
                 {evidence.length > 1 ? (
-                  <span className="text-[0.78rem] text-muted">
+                  <span className="text-[0.76rem] text-muted">
                     +{evidence.length - 1} more
                   </span>
                 ) : null}
               </div>
             ) : (
-              <div className="text-[0.8rem] text-muted">None recorded</div>
+              <div className="text-[0.78rem] text-muted">None recorded</div>
             )}
           </div>
 
           <div className="min-w-0">
-            <div className="mb-1.5 text-[0.68rem] uppercase tracking-[0.06em] text-faint">
+            <div className="mb-1.5 text-[0.66rem] uppercase tracking-[0.07em] text-faint">
               Recorded
             </div>
-            <div className="whitespace-nowrap font-mono text-[0.8rem]">
+            <div className="whitespace-nowrap font-mono text-[0.78rem]">
               {formatAge(row.created_at)}
             </div>
           </div>
-
-          {/* Full-row below the fields until there is width to pull it inline. */}
-          <div className="w-full sm:ml-auto sm:w-auto sm:self-end">
-            <a
-              href="/history"
-              className="whitespace-nowrap text-[0.82rem] font-medium text-ink underline decoration-line-strong underline-offset-2 hover:decoration-ink"
-            >
-              View verification history →
-            </a>
-          </div>
         </div>
       )}
-    </section>
+    </Panel>
   );
 }

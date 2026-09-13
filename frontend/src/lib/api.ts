@@ -1,5 +1,6 @@
 import type {
   DemoVerifyResponse,
+  ServiceHealth,
   VerificationDetail,
   VerificationListResponse,
   VerificationStatus,
@@ -89,6 +90,17 @@ export async function fetchStatus(
   } catch {
     return null;
   }
+}
+
+/** The gateway's own health. Used to report service state, never to fake one. */
+export async function fetchHealth(): Promise<ServiceHealth> {
+  const response = await fetch("/health");
+  if (!response.ok) {
+    throw new ApiError("The service did not report health.", response.status);
+  }
+  const payload = await readJson<ServiceHealth>(response);
+  if (!payload) throw new ApiError("Unreadable health response.", response.status);
+  return payload;
 }
 
 export async function fetchHistory(limit = 50): Promise<VerificationListResponse> {

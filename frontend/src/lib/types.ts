@@ -96,3 +96,14 @@ export interface VerificationDetail extends VerificationListItem {
 }
 
 export type RunPhase = "idle" | "running" | "complete" | "failed";
+
+/**
+ * The gateway's own /health response. Every field is reported by the service;
+ * none is inferred client-side.
+ */
+export interface ServiceHealth {
+  status: string;
+  network: string;
+  facilitator: string;
+  payTo: string;
+}
