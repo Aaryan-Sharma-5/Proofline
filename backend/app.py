@@ -68,7 +68,9 @@ async def analyze(request: Request) -> JSONResponse:
 
         result = verify_document(temp_path, _history)
 
-        payload = result.to_dict()
+        # Allowlist projection. The internal result carries the extracted vendor,
+        # beneficiary account and line items; none of that is served to a caller.
+        payload = result.to_public_dict()
 
         # Persist the verification
         try:

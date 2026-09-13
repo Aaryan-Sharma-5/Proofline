@@ -12,8 +12,16 @@ export const STAGE_SEQUENCE: { stage: Stage; label: string }[] = [
   { stage: "AGENT_ACTION", label: "Agent acted" },
 ];
 
+/**
+ * Reported only when the bounded extraction fallback actually ran, so it is not
+ * part of the fixed sequence above: on a normal verification it never arrives,
+ * and rendering it as a skipped step would imply something failed to happen.
+ */
+export const CONDITIONAL_STAGES: Stage[] = ["AI_EXTRACTION"];
+
 const SUBSCRIBED_STAGES: Stage[] = [
   ...STAGE_SEQUENCE.map((entry) => entry.stage),
+  ...CONDITIONAL_STAGES,
   "AUDIT",
   "ERROR",
 ];
@@ -127,8 +135,12 @@ export function useVerificationEvents(): UseVerificationEvents {
           });
 
           // Advance the marker to the next stage the server has not reported.
+          // A conditional stage is not in the sequence, so it leaves the marker
+          // where it is rather than sending it back to the first step.
           const index = STAGE_SEQUENCE.findIndex((e) => e.stage === stage);
-          setCurrent(STAGE_SEQUENCE[index + 1]?.stage ?? null);
+          if (index !== -1) {
+            setCurrent(STAGE_SEQUENCE[index + 1]?.stage ?? null);
+          }
         });
       }
 

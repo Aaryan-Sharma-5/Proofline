@@ -56,7 +56,7 @@ The most important section. These are enforceable rules, not preferences.
 ### Decision invariants
 
 1. The verdict is deterministic. Same document, same answer.
-2. **No LLM participates in the forensic decision path.** An LLM may explain a decision after it is produced; it may never produce or influence one.
+2. **No LLM participates in the forensic decision path.** An LLM may explain a decision after it is produced, and may help *read* a document before one exists (§10a); it may never produce or influence one. The boundary is extraction, and it is enforced structurally: the fallback's response schema has no property that could carry a decision, an evidence code or a score, and the validator drops every key it does not recognise.
 3. No confidence/probability dashboard. The internal policy score is implementation machinery, never surfaced as confidence, probability, or fraud likelihood.
 4. Every `REVIEW` carries named evidence codes.
 5. Extraction failure can never become `CLEAR`. Missing or unreliable required fields produce `EXTRACTION_INCOMPLETE` and force `REVIEW`.
@@ -269,6 +269,8 @@ Document
 
 **Extraction.** Prefers the embedded text layer; falls back to OCR (Tesseract at 300 DPI) when the text layer is below a minimum character count, with a minimum word-confidence floor. Every required field missing or unreliable produces `EXTRACTION_INCOMPLETE`. Semantic checks return nothing rather than a passing result when their inputs are unavailable, so partial extraction degrades into the safeguard rather than into a quietly clean verdict.
 
+Field patterns live in `backend/extraction_patterns.py`, separated so each is unit-testable without a PDF. Extraction is **label-anchored**: a value is accepted only where an explicit label introduces it. Breadth comes from recognising more labels, never from loosening what counts as a value — there is deliberately no "largest number on the page" heuristic, because a missing field escalates safely while a silently wrong financial field produces a confident decision about numbers nobody wrote. Dates normalize to ISO 8601 and reject impossible calendar days; amounts reject negatives and implausible magnitudes; a label whose value sits on an adjacent line is resolved within a small fixed window, with same-line matches always winning first.
+
 **Semantic checks (Level A).** `AMOUNT_MISMATCH` compares the stated total against the sum of line items. `BENEFICIARY_ACCOUNT_NEVER_SEEN` compares the extracted account against vendor history.
 
 **Structural/provenance (Level B).** PDF trailer `/ID` comparison. Interpret precisely: *differing `/ID` entries indicate that the current revision differs from its original identifier.* Do not describe this as definitive proof of edit history for every PDF producer. A second tool touching a file after creation — signing, annotation, an email attachment pipeline — is common and benign, which is why this level cannot escalate alone.
@@ -276,6 +278,47 @@ Document
 **Image corroboration (Level C).** The implemented signal is **embedded JPEG quantization-table inspection**, which correlates directly with re-compression history. Raw ELA/error-level residual was measured and found not to discriminate on real invoice pages (too little texture for pixel-level residual analysis); the residual is reported as contextual detail only and must never be thresholded. Do not reintroduce ELA as a decision signal.
 
 Level B and C do not depend on extraction succeeding.
+
+---
+
+## 10a. Bounded LLM Extraction Fallback
+
+`backend/llm_extraction.py`. **AI helps read the document. Deterministic evidence decides what the evidence means.**
+
+The fallback is a reader of last resort for a handful of named fields, invoked only when deterministic extraction could not recover them. It exists because a legitimate invoice with an unusual layout would otherwise escalate to `REVIEW` for no reason connected to its integrity.
+
+**Ordering (required).**
+
+```
+document → deterministic extraction
+         → complete?  → NO model call, ever
+         → incomplete → bounded fallback, missing fields only
+         → normalized fields
+         → the same deterministic forensic checks
+         → the same CLEAR / REVIEW / EXTRACTION_INCOMPLETE policy
+```
+
+A clean document makes no network call. That is a behavioural requirement with a test per corpus document, not an optimisation.
+
+**The boundary.** `llm_extraction.py` does not import `AMOUNT_MISMATCH`, `CLEAR`, `REVIEW`, `policy_score`, or the evidence hierarchy, and must not. Its single entry point returns field values or `{}`. It has no channel through which a verdict could travel.
+
+**Reconciliation rule (required).** A recovered value is accepted **only where the deterministic extractor produced nothing at all**. There is no precedence contest, no confidence comparison, no merge. Where the two could disagree the deterministic value wins by construction, because the model's value is never consulted. Enforced at the point of assignment, not trusted upstream.
+
+**Line items are never model-supplied.** `AMOUNT_MISMATCH` compares a total the document *states* against items the document *itemises*. If the fallback could supply both, the check could be satisfied by two numbers from the same source. `_LLM_FIELD_MAP` deliberately omits `line_items`; do not add it.
+
+**`AMOUNT_MISMATCH` requires both operands from the same extractor (required).** A model-recovered total is not comparable with deterministically-parsed line items: a gross total against net line items differs by exactly the tax, so the check would manufacture a `REVIEW` out of a units mismatch rather than a fact about the document. This was observed on a real Factur-X invoice (net 845.00 + 19% VAT = gross 1005.55, line items summing to the net). When `provenance["stated_total"]` is not `deterministic`, the check declines to run and the document simply carries no Level A amount evidence — the same position it would be in had the total been unreadable. Never "fix" this by reconciling tax; the engine does not extract a tax treatment and must not infer one.
+
+**Language coverage belongs to the fallback, not to the patterns.** The deterministic path recognises English labels and month names only. Per-language tables of labels, month names and conventions are an open-ended list that is never finished, and every entry is another chance to mis-read a financial field. Non-English invoices route to the fallback, whose output is validated back through the same normalizers. The one thing handled deterministically is *number format* — `1.005,55` and `1,005.55` both parse, because that is a locale-independent structural rule (a mandatory two-digit minor unit makes the last separator the decimal point) rather than a language vocabulary.
+
+**Untrusted input.** Model output is third-party data. Every field is schema-checked, type-checked, range-checked and normalized through the *same* normalizers the deterministic path uses, so a recovered value cannot take a shape a directly-read value could not. Unrecognised keys are dropped — that is what makes an injected `decision`, `evidence_codes` or `policy_score` inert.
+
+**Every failure converges.** Not configured, disabled, timeout, HTTP error, invalid JSON, schema violation, implausible value: all return `{}`. A fallback failure can never fail the verification lifecycle, and can never produce more fields than it started with.
+
+**`extraction_method`** (`deterministic` / `llm_assisted` / `incomplete`) is informational. It is not in `POLICY_WEIGHTS`, not in `EVIDENCE_LEVELS`, not consulted by `evaluate_policy`, and not evidence. It is safe for public display and is reported through `/analyze`.
+
+**Configuration.** Off by default; requires both `LLM_EXTRACTION_ENABLED=1` and `LLM_API_KEY`. A key alone does not enable it. Missing credentials must never break startup or the deterministic path. Provider: Groq, `openai/gpt-oss-20b`, strict JSON-schema constrained decoding, via stdlib `urllib` — no new dependency.
+
+**Determinism.** Only the deterministic path carries the same-document-same-answer guarantee. Never claim the fallback path is deterministic. Reproducibility tests must exercise the deterministic path, which is why the corpus never triggers the fallback.
 
 ---
 
@@ -302,7 +345,10 @@ Evidence codes must stay distinct per level. Do not collapse a Level B code and 
 ## 12. Event / SSE Architecture
 
 Stages: `RECEIVED`, `PAYMENT_REQUIRED`, `PAYING`, `PAID`, `ANALYZING`,
-`DECISION`, `AGENT_ACTION`, `AUDIT`, plus `ERROR`.
+`DECISION`, `AGENT_ACTION`, `AUDIT`, plus `ERROR`, and the conditional
+`AI_EXTRACTION`.
+
+**`AI_EXTRACTION` is conditional, not sequential.** It is emitted only when the analysis service reports `extraction_method: "llm_assisted"` — the gateway reports what the engine said and never infers that a model ran. Because it does not occur on a normal verification, it is absent from `STAGE_SEQUENCE` and is inserted into the rendered timeline only when observed; rendering it as a skipped step would assert that something failed to happen. Never fake it to decorate a deterministic run.
 
 **Ordering is not a contract.** `PAID` legitimately arrives *after* `DECISION`: x402's authorize/capture split means the facilitator verifies payment before analysis is gated, but a real transaction id exists only after settlement. Emitting `PAID` earlier would put a transaction id on the timeline before one existed. If observed ordering ever conflicts with an illustration, investigate which is honest before reordering.
 
@@ -529,8 +575,14 @@ Never commit real values. `.env` is gitignored; `.env.example` holds placeholder
 | `DEMO_RATE_LIMIT_PER_MINUTE` / `DEMO_MAX_CONCURRENT` / `DEMO_TIMEOUT_MS` | no | `/demo/verify` abuse controls | Server |
 | `PROOFLINE_ALLOW_PUBLIC_BIND` | no | Container-only bind override (§17) | Server |
 | `PROOFLINE_LIVE` | no | Opt in to live-payment tests | Server |
+| `LLM_EXTRACTION_ENABLED` | no | Enables the extraction fallback (§10a). Default off | Server |
+| `LLM_API_KEY` | no | **SECRET.** Provider key. Absence disables the fallback | **Server-side only** |
+| `LLM_MODEL` / `LLM_API_URL` | no | Provider overrides; default Groq `openai/gpt-oss-20b` | Server |
+| `LLM_TIMEOUT_SECONDS` | no | Default 8. On timeout the document falls through to `EXTRACTION_INCOMPLETE` | Server |
 
 **No variable is browser-safe.** Nothing in this table may reach a frontend bundle.
+
+**The `LLM_*` variables belong to the `analysis` service**, not the gateway: the engine runs there, and the gateway has no concept of extraction. In compose they are set on `analysis`. Setting them on the gateway does nothing.
 
 ### `GATEWAY_PUBLIC_URL` is environment-scoped, and wrong in either direction
 
@@ -620,7 +672,9 @@ Run from the repository root unless noted.
 | Browser capture | `cd x402-gate && GATEWAY_URL=http://127.0.0.1:4021/app npx tsx src/capture.ts` | Four real paid paths |
 | Accessibility probe | `cd x402-gate && npx tsx src/a11y-probe.ts` | Reports headings, focus, reduced motion |
 
-**Unit:** each forensic signal, extraction completeness, beneficiary history, policy evaluation, deterministic repeatability.
+**Unit:** each forensic signal, extraction completeness, beneficiary history, policy evaluation, deterministic repeatability, every added label variant and its negative cases.
+
+**Extraction fallback (§10a):** the suite runs offline against a stubbed provider. Covered: disabled by default; a key alone does not enable it; no provider call for any corpus document; recovery of a genuinely missing field; a recovered account feeding `BENEFICIARY_ACCOUNT_NEVER_SEEN`; still-incomplete when recovery fails; every provider failure mode; and the injection boundary — an attempted `decision`, `evidence_codes` or `policy_score` in the response must be inert, and a deterministic field must never be overwritten.
 
 **Integration:** 402 challenge, facilitator verification and settlement, payment-gate enforcement, persistence, reference-agent CLEAR and REVIEW paths, agent fail-safe behaviour.
 
@@ -756,6 +810,8 @@ Show real output, not a description of expected output. A check that reads zero 
 
 - Add sponsors for prize stacking; make Chainlink load-bearing; reintroduce The Graph without a new verified product requirement.
 - Replace deterministic decisioning with an LLM.
+- Let the extraction fallback (§10a) reach the decision: produce or influence a verdict, emit an evidence code or score, overwrite a field the deterministic extractor already read, supply `line_items`, or run at all for a document that extracted cleanly.
+- Claim the LLM-assisted extraction path is deterministic, or present `extraction_method` as evidence, a confidence, or a quality rating.
 - Claim ELA proves AI generation, or that provenance anomalies prove fraud.
 - Expose private keys or any secret.
 - Fabricate UI state, payment state, transaction ids, HCS records, or evidence.
@@ -800,6 +856,8 @@ x402-gate/                     Express gateway — sole public origin
 backend/                       Python analysis service — internal only
   app.py                       FastAPI, loopback guard, /analyze, history
   proofline_engine.py          extraction, evidence, policy, CLI
+  extraction_patterns.py       label-anchored patterns and normalizers
+  llm_extraction.py            bounded extraction fallback (§10a); no decision concept
   db.py                        SQLite persistence
   seed_db.py                   out-of-band vendor-history seed
   make_test_docs.py            five-document corpus generator
@@ -810,6 +868,8 @@ backend/                       Python analysis service — internal only
 
 tests/                         pytest
   test_forensics.py            engine signals, extraction, policy
+  test_extraction_patterns.py  label variants, normalization, negative cases
+  test_llm_extraction.py       fallback gating, validation, injection boundary
   test_agent_failsafe.py       fail-closed decisioning, idempotency
   test_history_privacy.py      allowlist projection, leakage probes
   test_frontend_language.py    score/confidence/probability scan

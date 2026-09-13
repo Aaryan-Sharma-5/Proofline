@@ -140,7 +140,7 @@ Neither verdict is a fraud finding. `CLEAR` means no material anomaly was detect
 
 Deterministic Python. Same document, same answer, every time — reproducibility is directly checkable with `--repeat N`, which re-runs a document and asserts the serialized output is identical.
 
-**No LLM participates in the decision.** There is no model call anywhere in the analysis path. The engine is rules over extracted values.
+**No LLM participates in the decision.** No model call exists anywhere in the decision path. The engine is rules over extracted values, and those rules are the only thing that produces a verdict. A model may help *read* a difficult document — see [AI-assisted extraction](#ai-assisted-extraction) — but it never decides what the reading means.
 
 ### Named evidence, ranked
 
@@ -157,6 +157,36 @@ The hierarchy is enforced in code, not left to convention. **Level A can escalat
 ### Fail-closed extraction
 
 If a required field (vendor, invoice number, date, beneficiary account, stated total, line items) cannot be read reliably, the engine emits `EXTRACTION_INCOMPLETE` and returns `REVIEW`. The semantic checks that depend on those fields return nothing rather than a passing result. Documents with no text layer fall back to OCR.
+
+Extraction is label-anchored: a value is accepted only where an explicit label introduces it. Common variants are supported — `Total Due` / `Total` / `Amount Due` / `Balance Due`, `Account Number` / `Account` / `IBAN` / `Remit To Account`, `Invoice Date` / `Date` / `Issue Date` — with dates normalized to ISO 8601 and amounts and currencies normalized safely. Both number conventions parse (`1,234.56` and `1.234,56`), decided structurally rather than by locale guessing. A label whose value is rendered on an adjacent line, as right-aligned layouts produce, is resolved within a small fixed window. What is deliberately absent is any "largest number on the page is probably the total" heuristic: a missing field escalates safely, whereas a silently wrong financial field would produce a confident decision about numbers nobody wrote.
+
+Labels and month names are recognised in English only. Non-English invoices are handled by the fallback below rather than by growing a per-language rule table — that list is never finished, and every entry is another chance to mis-read a financial field.
+
+### AI-assisted extraction
+
+AI-assisted extraction is used only when deterministic extraction cannot recover required invoice fields. **The model does not determine the security verdict.** Recovered fields are validated and passed into the same deterministic forensic policy used for non-AI requests.
+
+The boundary, precisely:
+
+| | Deterministic engine | Extraction fallback |
+|---|---|---|
+| Reads fields from the document | yes | only those the engine could not read |
+| Produces evidence codes | yes | never |
+| Produces the policy score | yes | never |
+| Produces `CLEAR` / `REVIEW` | yes | never |
+| Can overwrite a field already read | — | never |
+
+Its main practical use is **non-English invoices**: German, French, Spanish and other layouts that the English label patterns cannot read. The model identifies fields by meaning rather than by matching an English label, and returns them for validation.
+
+Model output is treated as untrusted input from a third-party service. Every returned value is schema-checked, type-checked, range-checked and normalized through the same normalizers the deterministic path uses, so a recovered value cannot take a shape a directly-read value could not. Unrecognised keys are dropped, which is what makes an injected `decision`, `evidence_codes` or `policy_score` inert — the response schema has no such property and the validator discards it. Line items are never model-supplied, because `AMOUNT_MISMATCH` must compare a total the document states against items the document itemises, not two numbers from the same source.
+
+For the same reason, `AMOUNT_MISMATCH` declines to run when the total came from the model and the line items did not: a gross total against net line items differs by exactly the tax, and reporting that as a discrepancy would describe how the document was read rather than anything about the document.
+
+Every failure mode converges on the same result: not configured, disabled, timed out, HTTP error, malformed JSON, schema violation or implausible value all contribute nothing, leaving the document incomplete and escalating to `REVIEW`. A successful recovery can never authorize a downstream payment on its own; it only restores the inputs the deterministic checks need.
+
+The feature is **off by default** and requires two switches (`LLM_EXTRACTION_ENABLED=1` and an `LLM_API_KEY`). With neither set — the default for a fresh clone — the deterministic path runs exactly as it always has. When the fallback does run, the UI says so plainly and the event timeline carries an `AI_EXTRACTION` stage; on a deterministic verification that stage never appears and is never synthesized.
+
+Provider: Groq (`openai/gpt-oss-20b`), chosen for low latency and a free tier, using strict JSON-schema constrained decoding. Configurable via `LLM_MODEL` / `LLM_API_URL`.
 
 ### No confidence score
 
@@ -418,7 +448,9 @@ Open `http://127.0.0.1:4021/app`. Forgetting the agent process is the most commo
 - **The agent's idempotency ledger is process-local** and does not survive a restart. That state belongs in the consuming AP system's durable store.
 - **Single gateway instance.** SSE streams live in gateway memory; multiple instances would need a shared bus.
 - **History filtering is client-side** over the returned window.
-- **Extraction is tuned to supported invoice layouts.** Arbitrary real-world invoices will more often hit `EXTRACTION_INCOMPLETE` — the conservative failure, but still a failure.
+- **Extraction is tuned to supported invoice layouts.** Coverage is broader than the bundled corpus — common label variants, date formats and split label/value layouts are handled — but arbitrary real-world invoices will still hit `EXTRACTION_INCOMPLETE` more often than a production extractor would. That is the conservative failure, but it is still a failure. The AI-assisted fallback widens coverage when enabled; it does not make coverage complete.
+- **The AI extraction fallback is not deterministic** and is not claimed to be. Only the deterministic path carries the same-document-same-answer guarantee, which is why the fallback cannot reach the decision, cannot overwrite a directly-read field, and is off by default. A document recovered by the model is judged by the same deterministic policy, but the recovery step itself may vary between runs.
+- **The fallback has not been exercised against a live provider in this repository.** Its behaviour is covered by tests against a stubbed provider, including every failure and injection path; validating the real network call requires supplying an `LLM_API_KEY`.
 
 ---
 

@@ -1,6 +1,29 @@
-import { STAGE_SEQUENCE } from "../hooks/useVerificationEvents";
+import { CONDITIONAL_STAGES, STAGE_SEQUENCE } from "../hooks/useVerificationEvents";
 import type { Stage, VerificationEvent } from "../lib/types";
 import { Panel } from "./Panel";
+
+/**
+ * The stages to render for this run: the fixed sequence, plus any conditional
+ * stage the server actually reported, inserted where it happened. A conditional
+ * stage that did not occur is absent entirely rather than shown as skipped —
+ * "AI extraction did not happen" is not a fact about a normal verification.
+ */
+function stagesToRender(
+  seen: Map<Stage, VerificationEvent>,
+): { stage: Stage; label: string }[] {
+  const occurred = CONDITIONAL_STAGES.filter((stage) => seen.has(stage));
+  if (occurred.length === 0) return STAGE_SEQUENCE;
+
+  const rows = [...STAGE_SEQUENCE];
+  if (seen.has("AI_EXTRACTION")) {
+    const after = rows.findIndex((entry) => entry.stage === "ANALYZING");
+    rows.splice(after + 1, 0, {
+      stage: "AI_EXTRACTION",
+      label: "AI-assisted extraction",
+    });
+  }
+  return rows;
+}
 
 interface Props {
   seen: Map<Stage, VerificationEvent>;
@@ -31,6 +54,8 @@ function interpret(stage: Stage, detail?: Record<string, unknown>): string {
       return "Consuming agent authorized the payment.";
     case "ANALYZING":
       return "Document forensic checks are running.";
+    case "AI_EXTRACTION":
+      return "Some required fields could not be read directly, so AI-assisted extraction recovered them. The decision below comes from the same deterministic checks either way.";
     case "DECISION": {
       const decision = read("decision");
       return decision
@@ -96,14 +121,15 @@ function isReviewStage(stage: Stage, detail?: Record<string, unknown>): boolean 
 }
 
 export function AgentTimeline({ seen, current, finished, subject }: Props) {
-  const done = STAGE_SEQUENCE.filter((entry) => seen.has(entry.stage)).length;
+  const rows = stagesToRender(seen);
+  const done = rows.filter((entry) => seen.has(entry.stage)).length;
 
   return (
     <Panel
       title="Event timeline"
       aside={
         <span className="font-mono text-[0.68rem] text-faint">
-          {finished ? `${done}/${STAGE_SEQUENCE.length} events` : "live"}
+          {finished ? `${done}/${rows.length} events` : "live"}
         </span>
       }
     >
@@ -119,7 +145,7 @@ export function AgentTimeline({ seen, current, finished, subject }: Props) {
       ) : null}
 
       <ol className="timeline m-0 list-none p-0">
-        {STAGE_SEQUENCE.map(({ stage, label }, index) => {
+        {rows.map(({ stage, label }, index) => {
           const event = seen.get(stage);
           const isActive = !finished && stage === current && !event;
           const skipped = !event && !isActive && finished;
@@ -127,7 +153,7 @@ export function AgentTimeline({ seen, current, finished, subject }: Props) {
 
           const detail = event ? describeDetail(stage, event.detail) : "";
           const reading = event ? interpret(stage, event.detail) : "";
-          const isLast = index === STAGE_SEQUENCE.length - 1;
+          const isLast = index === rows.length - 1;
 
           return (
             <li

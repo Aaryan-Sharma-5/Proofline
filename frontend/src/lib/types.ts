@@ -23,6 +23,7 @@ export interface Verification {
   decision?: Decision;
   evidence_codes?: EvidenceCode[];
   service_version?: string;
+  extraction_method?: ExtractionMethod;
   error?: ErrorCode;
   message?: string;
 }
@@ -55,11 +56,19 @@ export type Stage =
   | "PAYMENT_REQUIRED"
   | "PAYING"
   | "ANALYZING"
+  | "AI_EXTRACTION"
   | "DECISION"
   | "PAID"
   | "AGENT_ACTION"
   | "AUDIT"
   | "ERROR";
+
+/**
+ * How the document's required fields were read. Reported by the analysis
+ * service for transparency; it is not evidence and takes no part in the
+ * decision, which is produced by the same deterministic checks either way.
+ */
+export type ExtractionMethod = "deterministic" | "llm_assisted" | "incomplete";
 
 export interface VerificationEvent {
   seq: number;

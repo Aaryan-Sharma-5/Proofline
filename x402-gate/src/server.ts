@@ -112,6 +112,15 @@ async function verifyHandler(req: PaidRequest, res: Response): Promise<void> {
     if (typeof verdict.verification_id === "string") {
       events.bindVerificationId(correlationId, verdict.verification_id);
     }
+
+    // Only when the engine actually used the fallback. The gateway reports what
+    // the analysis service said; it never infers that a model ran.
+    if (verdict.extraction_method === "llm_assisted") {
+      events.emit(correlationId, "AI_EXTRACTION", {
+        extraction_method: verdict.extraction_method,
+      });
+    }
+
     events.emit(correlationId, "DECISION", {
       decision: verdict.decision,
       evidence_codes: verdict.evidence_codes,
