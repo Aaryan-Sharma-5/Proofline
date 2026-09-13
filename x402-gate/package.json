@@ -11,6 +11,8 @@
     "client": "tsx src/client.ts",
     "corpus": "tsx src/run-corpus.ts",
     "agent": "tsx src/reference-agent.ts",
+    "preflight": "tsx src/preflight.ts",
+    "capture": "tsx src/preflight.ts && tsx src/capture.ts",
     "demo": "tsx src/demo-client.ts",
     "stream": "tsx src/stream-demo.ts",
     "watch": "tsx src/watch-events.ts"
