@@ -8,7 +8,7 @@ export const STAGE_SEQUENCE: { stage: Stage; label: string }[] = [
   { stage: "PAYING", label: "Payment authorized" },
   { stage: "ANALYZING", label: "Analyzing document" },
   { stage: "DECISION", label: "Decision reached" },
-  { stage: "PAID", label: "Verification fee settled" },
+  { stage: "PAID", label: "Verification payment settled" },
   { stage: "AGENT_ACTION", label: "Agent acted" },
 ];
 
@@ -39,6 +39,40 @@ export function feeFromEvents(seen: Map<Stage, VerificationEvent>): string | nul
   if (typeof price === "string" && price.trim()) return price.trim();
   if (typeof price === "number") return String(price);
   return null;
+}
+
+/** The furthest stage actually confirmed by the server so far, in stage order. */
+export function furthestStageSeen(seen: Map<Stage, VerificationEvent>): Stage | null {
+  let furthest: Stage | null = null;
+  for (const { stage } of STAGE_SEQUENCE) {
+    if (seen.has(stage)) furthest = stage;
+  }
+  return furthest;
+}
+
+/**
+ * Payment state read from the stages the server actually reported. x402's
+ * authorize/capture split means PAID legitimately arrives after DECISION, so
+ * this reads the events rather than assuming an order.
+ */
+export function paymentStatusFromEvents(
+  seen: Map<Stage, VerificationEvent>,
+  finished: boolean,
+): "REQUIRED" | "PAYING" | "PAID" | "NOT_SETTLED" {
+  if (seen.has("PAID")) return "PAID";
+  if (seen.has("PAYING")) return finished ? "NOT_SETTLED" : "PAYING";
+  if (seen.has("PAYMENT_REQUIRED")) return finished ? "NOT_SETTLED" : "REQUIRED";
+  return "NOT_SETTLED";
+}
+
+/** Server timestamp of the decision event, the moment the verdict existed. */
+export function decidedAtFromEvents(
+  seen: Map<Stage, VerificationEvent>,
+): string | null {
+  const ts = seen.get("DECISION")?.ts;
+  if (!ts) return null;
+  const date = new Date(ts);
+  return Number.isNaN(date.getTime()) ? ts : date.toLocaleString();
 }
 
 export function useVerificationEvents(): UseVerificationEvents {
