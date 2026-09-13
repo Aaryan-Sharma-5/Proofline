@@ -45,6 +45,11 @@ Copy `.env.example` to `.env` and fill it in. Compose reads `.env` automatically
 | `DEMO_RATE_LIMIT_PER_MINUTE` | no | `12`. |
 | `DEMO_MAX_CONCURRENT` | no | `2`. |
 | `DEMO_TIMEOUT_MS` | no | `120000`. |
+| `LLM_EXTRACTION_ENABLED` | no | `0`. Enables the bounded extraction fallback (CLAUDE.md §10a). **Leave at `0` unless a working provider key is in hand.** |
+| `LLM_API_KEY` | no | Server-side only. Absence disables the fallback regardless of the flag above. |
+| `LLM_MODEL` / `LLM_TIMEOUT_SECONDS` | no | `openai/gpt-oss-20b` / `8`. |
+
+The `LLM_*` variables belong to the **`analysis`** service, not the gateway — the engine runs there. Both the flag *and* a key are required to activate the fallback; with either absent the deterministic path runs exactly as before, and the service starts normally. A deployment that sets neither is fully supported and is the default.
 
 `HEDERA_ACCOUNT_ID` / `HEDERA_PRIVATE_KEY` are for the *local developer* client scripts only. Production does not need them.
 
