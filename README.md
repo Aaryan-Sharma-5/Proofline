@@ -1,10 +1,12 @@
 # Proofline
 
+![Proofline](assets/cover.png)
+
 > **Agents pay for evidence before they pay with money.** Machine-payable document-integrity verification for autonomous AP and financial agents.
 
 **ETHGlobal Online 2026 · Security · Hedera - AI & Agentic Payments**
 
-**[Live Demo](https://proofline.duckdns.org)** · **[Verifier](https://proofline.duckdns.org/app)** · **[API Docs](https://proofline.duckdns.org/docs)**
+**[Live Demo](https://proofline.duckdns.org)** · **[Verifier](https://proofline.duckdns.org/app)** · **[API Docs](https://proofline.duckdns.org/docs)** · **[Demo Video](assets/demo.mp4)**
 
 ```
                 Invoice
@@ -50,6 +52,8 @@ A server-side reference agent holds the funded testnet account and pays on your 
 
 Or upload your own PDF. [History](https://proofline.duckdns.org/history) shows the privacy-safe record of every verification.
 
+![Landing page](assets/screenshot-landing.png)
+
 ---
 
 ## The Moment
@@ -69,6 +73,8 @@ AGENT_ACTION       HALT · downstream payment action NOT authorized
 The agent was about to proceed with the downstream payment action for this invoice. It bought a fact for two cents, learned that this vendor has been paid before but never to this account, and stopped.
 
 **Software buying a fact, then changing its mind about money.**
+
+![REVIEW result with named evidence](assets/screenshot-review-result.png)
 
 ---
 
@@ -268,6 +274,10 @@ Reproduced directly from the engine, not described from memory:
 Rows 4 and 5 are the interesting ones. Both carry **real evidence** that is persisted and displayed, and both correctly decide `CLEAR` — that is the Level B/C hierarchy working, not a check failing to fire.
 
 Malformed input resolves to a clearly labelled `NO VERDICT` (explicitly not `ERROR`, since it implies nothing about the document), surfacing the real backend error class rather than a generic message. Stages the stream never reached render as "did not happen", not as still-pending.
+
+| CLEAR | History |
+|---|---|
+| ![CLEAR result](assets/screenshot-clear-result.png) | ![Verification history](assets/screenshot-history.png) |
 
 ---
 
