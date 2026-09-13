@@ -1,10 +1,13 @@
 import { ProductFlow } from "../components/ProductFlow";
+import { buttonClass } from "../lib/ui";
 
+// Shared button vocabulary, so the landing CTAs and the in-app actions match.
 const BUTTON =
-  "inline-block rounded-[6px] border px-4 py-2.5 text-[0.845rem] font-medium transition-colors";
+  "inline-flex items-center justify-center gap-2 rounded-[6px] border px-4 py-2.5 " +
+  "text-[0.845rem] font-medium transition-colors duration-150";
 
-const PRIMARY = `${BUTTON} border-ink bg-ink text-white hover:bg-[#2E2F33]`;
-const SECONDARY = `${BUTTON} border-line-strong bg-panel text-ink hover:bg-panel-2 hover:border-[#B7B3A8]`;
+const PRIMARY = buttonClass("primary");
+const SECONDARY = buttonClass("secondary");
 
 const PRINCIPLES = [
   {
@@ -60,6 +63,9 @@ function SiteHeader() {
         </a>
         <a href="#how-it-works" className="text-muted hover:text-ink">
           How it works
+        </a>
+        <a href="/history" className="text-muted hover:text-ink">
+          History
         </a>
         <a href="/docs" className="text-muted hover:text-ink">
           API
