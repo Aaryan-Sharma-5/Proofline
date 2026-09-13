@@ -1,14 +1,10 @@
-import {
-  DECISION_NOTE,
-  NO_VERDICT_NOTE,
-  describeEvidence,
-  levelLabel,
-} from "../lib/evidence";
+import { DECISION_NOTE, NO_VERDICT_NOTE } from "../lib/evidence";
 import type { DemoVerifyResponse, ServiceHealth } from "../lib/types";
 import { AgentPanel } from "./AgentPanel";
 import { AuditPanel } from "./AuditPanel";
+import { EvidenceList } from "./EvidenceList";
 import { Panel } from "./Panel";
-import { SettlementPanel } from "./SettlementPanel";
+import { SettlementPanel, type PaymentStatus } from "./SettlementPanel";
 
 const DECISION_STYLES = {
   CLEAR: "text-clear bg-clear-bg border-clear-border",
@@ -16,11 +12,18 @@ const DECISION_STYLES = {
   FAULT: "text-fault bg-fault-bg border-fault-border",
 } as const;
 
-/** The consequence of each decision, stated as the agent's actual constraint. */
+/**
+ * What each decision *requires*, not what was observed to happen.
+ *
+ * Kept identical in meaning to the history view's wording
+ * (VerificationArtifact), so a verification does not read as one thing live and
+ * another once persisted. What the agent actually did is reported separately in
+ * the Consuming agent panel, which is the only place that claim belongs.
+ */
 const DECISION_CONSEQUENCE = {
-  CLEAR: "Agent may proceed",
-  REVIEW: "Agent halted payment",
-  FAULT: "Agent has no verdict to act on",
+  CLEAR: "Consuming agent may proceed",
+  REVIEW: "Consuming agent must halt the invoice payment",
+  FAULT: "Consuming agent has no decision to act on",
 } as const;
 
 interface Props {
@@ -28,9 +31,18 @@ interface Props {
   /** Fee in HBAR as reported by the 402 challenge, null if not observed. */
   fee: string | null;
   health: ServiceHealth | null;
+  paymentStatus: PaymentStatus;
+  /** When the decision event arrived, for the metadata strip. */
+  decidedAt: string | null;
 }
 
-export function ResultPanel({ result, fee, health }: Props) {
+export function ResultPanel({
+  result,
+  fee,
+  health,
+  paymentStatus,
+  decidedAt,
+}: Props) {
   const verification = result.verification ?? {};
   const rejected = Boolean(!verification.decision && verification.error);
   const codes = verification.evidence_codes ?? [];
@@ -50,8 +62,8 @@ export function ResultPanel({ result, fee, health }: Props) {
 
   return (
     <>
-      {/* Decision first and largest: it is the product of the whole flow. */}
-      <Panel title="Decision" id="panel-result" step="01" connectsDown>
+      {/* 1. Decision, visually dominant: it is the product of the whole flow. */}
+      <Panel title="Verification decision" id="panel-result" connectsDown>
         {/* Revealed when the real decision arrives, not while waiting for one. */}
         <div className="state-enter flex flex-wrap items-start gap-x-6 gap-y-4">
           <span
@@ -68,7 +80,11 @@ export function ResultPanel({ result, fee, health }: Props) {
             <div
               className={[
                 "font-mono text-[0.76rem] font-semibold uppercase tracking-[0.08em]",
-                tone === "CLEAR" ? "text-clear" : tone === "REVIEW" ? "text-review" : "text-fault",
+                tone === "CLEAR"
+                  ? "text-clear"
+                  : tone === "REVIEW"
+                    ? "text-review"
+                    : "text-fault",
               ].join(" ")}
             >
               → {DECISION_CONSEQUENCE[tone]}
@@ -81,11 +97,17 @@ export function ResultPanel({ result, fee, health }: Props) {
             </p>
           </div>
         </div>
+
+        <MetadataStrip
+          verificationId={verification.verification_id ?? null}
+          decidedAt={decidedAt}
+          serviceVersion={verification.service_version ?? null}
+        />
       </Panel>
 
+      {/* 2. Why this decision. */}
       <Panel
         title="Evidence"
-        step="02"
         connected
         connectsDown
         aside={
@@ -114,76 +136,69 @@ export function ResultPanel({ result, fee, health }: Props) {
         )}
       </Panel>
 
-      <Panel title="Agent action" step="03" connected connectsDown>
+      {/* 3. Operational consequence. */}
+      <Panel title="Consuming agent" connected connectsDown>
         <AgentPanel agent={result.agent} reasons={rejected ? [] : codes} />
       </Panel>
 
-      <Panel title="Verification fee" step="04" connected connectsDown>
+      {/* 4. What was actually paid for the verification itself. */}
+      <Panel title="Verification payment" connected connectsDown>
         <SettlementPanel
           payment={result.payment}
-          verificationId={verification.verification_id ?? null}
           fee={fee}
           health={health}
+          status={paymentStatus}
           rejected={rejected}
         />
       </Panel>
 
-      <Panel title="Audit record" step="05" connected>
-        <AuditPanel />
+      {/* 5. Technical audit material, lowest priority in the reading order. */}
+      <Panel title="Verification proof" connected>
+        <AuditPanel
+          facts={{
+            verificationId: verification.verification_id ?? null,
+            documentHash: verification.document_hash ?? null,
+            decision: rejected ? null : (verification.decision ?? null),
+            evidenceCodes: rejected ? [] : codes,
+            timestamp: decidedAt,
+            serviceVersion: verification.service_version ?? null,
+          }}
+        />
       </Panel>
     </>
   );
 }
 
-function EvidenceList({ codes }: { codes: string[] }) {
-  if (codes.length === 0) {
-    return (
-      <ul id="evidence" className="m-0 list-none p-0">
-        <li className="text-[0.87rem] text-muted">
-          No anomalies were recorded by the configured checks.
-        </li>
-      </ul>
-    );
-  }
+/** Compact technical identity for the decision, only where values exist. */
+function MetadataStrip({
+  verificationId,
+  decidedAt,
+  serviceVersion,
+}: {
+  verificationId: string | null;
+  decidedAt: string | null;
+  serviceVersion: string | null;
+}) {
+  const entries = [
+    { label: "Verification", value: verificationId },
+    { label: "Recorded", value: decidedAt },
+    { label: "Service", value: serviceVersion },
+  ].filter((entry) => Boolean(entry.value));
+
+  if (entries.length === 0) return null;
 
   return (
-    <ul id="evidence" className="m-0 list-none p-0">
-      {codes.map((code) => {
-        const meta = describeEvidence(code);
-        const isCorroborating = meta?.level === "B" || meta?.level === "C";
-
-        return (
-          <li
-            key={code}
-            className="border-t border-line py-4 first:border-t-0 first:pt-0 last:pb-0"
-          >
-            <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1.5">
-              <span className="code font-mono text-[0.84rem] font-semibold">{code}</span>
-              {meta ? (
-                <span className="level whitespace-nowrap rounded-sm border border-line-strong px-1.5 py-0.5 font-mono text-[0.64rem] tracking-[0.05em] text-faint">
-                  {levelLabel(meta.level)}
-                </span>
-              ) : null}
-            </div>
-
-            {meta ? (
-              <div className="mt-1.5 text-[0.82rem] font-medium text-ink">
-                {meta.short}
-              </div>
-            ) : null}
-
-            <div className="explain mt-1 max-w-[44rem] text-[0.86rem] leading-relaxed text-muted">
-              {meta ? meta.text : "Reported by the verification service."}
-            </div>
-
-            {isCorroborating ? (
-              <div className="mt-2 font-mono text-[0.68rem] uppercase tracking-[0.06em] text-faint">
-                Corroborating only · cannot escalate alone
-              </div>
-            ) : null}
-          </li>
-        );
-      })}
-    </ul>
+    <dl className="mt-5 flex flex-wrap gap-x-7 gap-y-2 border-t border-line pt-4">
+      {entries.map((entry) => (
+        <div key={entry.label} className="flex min-w-0 items-baseline gap-2">
+          <dt className="text-[0.64rem] uppercase tracking-[0.07em] text-faint">
+            {entry.label}
+          </dt>
+          <dd className="m-0 wrap-break-word break-all font-mono text-[0.76rem] text-muted">
+            {entry.value}
+          </dd>
+        </div>
+      ))}
+    </dl>
   );
 }

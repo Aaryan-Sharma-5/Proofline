@@ -2,13 +2,13 @@ import type { AgentOutcome } from "../lib/types";
 
 const ACTION_COPY = {
   PROCEED: {
-    status: "Released",
-    next: "Downstream supplier payment released",
+    status: "Proceeding",
+    next: "Release the invoice payment",
     tone: "clear" as const,
   },
   HALT: {
     status: "Halted",
-    next: "Escalate to human review",
+    next: "Escalate for human review",
     tone: "review" as const,
   },
   SKIP: {
@@ -19,12 +19,12 @@ const ACTION_COPY = {
 };
 
 /**
- * The reference agent's operational readout.
+ * What the consuming agent did with the verification.
  *
- * Every field comes from the agent's own reported outcome. The agent has no
- * capabilities beyond deciding and recording a simulated release, so nothing
- * here implies a queue, an assignee, or an approval workflow that does not
- * exist (CLAUDE.md Section 11).
+ * Every field comes from the agent's own reported outcome. The reference agent
+ * has no capabilities beyond deciding and recording a simulated release, so
+ * nothing here implies a queue, an assignee, or an approval workflow that does
+ * not exist. Its account and key material are never surfaced.
  */
 export function AgentPanel({
   agent,
@@ -35,8 +35,8 @@ export function AgentPanel({
 }) {
   if (!agent) {
     return (
-      <div id="agent" className="text-[0.86rem] italic text-muted">
-        No agent action was recorded for this run.
+      <div id="agent" className="text-[0.86rem] text-muted">
+        No consuming-agent action was recorded for this run.
       </div>
     );
   }
@@ -50,9 +50,7 @@ export function AgentPanel({
   return (
     <div id="agent">
       <div className="flex flex-wrap items-center gap-x-3 gap-y-2 border-b border-line pb-4">
-        <span className="font-mono text-[0.72rem] uppercase tracking-[0.09em] text-faint">
-          Reference AP agent
-        </span>
+        <span className="text-[0.86rem] font-medium text-ink">Reference AP agent</span>
         <span
           className={[
             "rounded-sm border px-2 py-0.5 font-mono text-[0.71rem] font-semibold tracking-[0.04em]",
@@ -78,7 +76,7 @@ export function AgentPanel({
             </dt>
             <dd className="m-0">
               {reasons.map((code) => (
-                <div key={code} className="font-mono text-[0.8rem] wrap-break-word break-all">
+                <div key={code} className="wrap-break-word break-all font-mono text-[0.8rem]">
                   {code}
                 </div>
               ))}
@@ -92,7 +90,7 @@ export function AgentPanel({
         <dd className="m-0 text-[0.86rem] text-ink">{copy.next}</dd>
 
         <dt className="text-[0.66rem] uppercase tracking-[0.07em] text-faint">
-          Downstream payment
+          Invoice payment
         </dt>
         <dd className={`m-0 font-mono text-[0.82rem] ${toneText}`}>
           {agent.downstreamPaymentReleased ? "RELEASED" : "NOT RELEASED"}
@@ -108,6 +106,12 @@ export function AgentPanel({
           ))}
         </ul>
       ) : null}
+
+      <p className="mt-4 border-t border-line pt-3.5 text-[0.76rem] leading-relaxed text-faint">
+        The agent's execution metadata is not persisted by Proofline: whether an
+        invoice payment actually ran belongs to the consuming system's own
+        ledger, not to the verification record.
+      </p>
     </div>
   );
 }

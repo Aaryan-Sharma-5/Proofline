@@ -10,18 +10,49 @@ interface Props {
   subject?: string | null;
 }
 
-/** Phase grouping, so seven stages read as four things happening. */
-const STAGE_GROUP: Record<string, string> = {
-  RECEIVED: "Request",
-  PAYMENT_REQUIRED: "Payment",
-  PAYING: "Payment",
-  ANALYZING: "Analysis",
-  DECISION: "Decision",
-  PAID: "Settlement",
-  AGENT_ACTION: "Agent",
-};
+/**
+ * A plain-language reading of each stage. The raw stage code stays visible
+ * alongside it, so the timeline is legible without hiding the protocol.
+ */
+function interpret(stage: Stage, detail?: Record<string, unknown>): string {
+  const read = (key: string): string => {
+    const value = detail?.[key];
+    return typeof value === "string" || typeof value === "number"
+      ? String(value)
+      : "";
+  };
 
-// Small, safe per-stage detail. Never extracted document fields
+  switch (stage) {
+    case "RECEIVED":
+      return "Verification request received.";
+    case "PAYMENT_REQUIRED":
+      return "Verification payment required before analysis.";
+    case "PAYING":
+      return "Consuming agent authorized the payment.";
+    case "ANALYZING":
+      return "Document forensic checks are running.";
+    case "DECISION": {
+      const decision = read("decision");
+      return decision
+        ? `Proofline returned ${decision}.`
+        : "Proofline returned a decision.";
+    }
+    case "PAID":
+      return "Verification payment confirmed on Hedera.";
+    case "AGENT_ACTION": {
+      const action = read("action");
+      if (action === "PROCEED") return "Consuming agent released the invoice payment.";
+      if (action === "HALT") return "Consuming agent halted processing.";
+      if (action === "SKIP")
+        return "Consuming agent suppressed a duplicate release.";
+      return "Consuming agent acted on the decision.";
+    }
+    default:
+      return "";
+  }
+}
+
+// Small, safe per-stage technical detail. Never extracted document fields.
 function describeDetail(stage: Stage, detail?: Record<string, unknown>): string {
   if (!detail) return "";
   const read = (key: string): string => {
@@ -69,10 +100,10 @@ export function AgentTimeline({ seen, current, finished, subject }: Props) {
 
   return (
     <Panel
-      title="Verification"
+      title="Event timeline"
       aside={
         <span className="font-mono text-[0.68rem] text-faint">
-          {finished ? `${done}/${STAGE_SEQUENCE.length} complete` : "live"}
+          {finished ? `${done}/${STAGE_SEQUENCE.length} events` : "live"}
         </span>
       }
     >
@@ -95,7 +126,7 @@ export function AgentTimeline({ seen, current, finished, subject }: Props) {
           const isReview = event ? isReviewStage(stage, event.detail) : false;
 
           const detail = event ? describeDetail(stage, event.detail) : "";
-          const group = STAGE_GROUP[stage] ?? "";
+          const reading = event ? interpret(stage, event.detail) : "";
           const isLast = index === STAGE_SEQUENCE.length - 1;
 
           return (
@@ -137,22 +168,27 @@ export function AgentTimeline({ seen, current, finished, subject }: Props) {
               <span className="min-w-0">
                 <span className="flex flex-wrap items-baseline gap-x-2">
                   <span className="stage-name text-[0.83rem] font-medium">{label}</span>
-                  {group ? (
-                    <span className="font-mono text-[0.62rem] uppercase tracking-[0.07em] text-faint/80">
-                      {group}
-                    </span>
-                  ) : null}
+                  <span className="font-mono text-[0.62rem] uppercase tracking-[0.06em] text-faint/85">
+                    {stage}
+                  </span>
                   {skipped ? (
                     <span className="font-mono text-[0.62rem] uppercase tracking-[0.06em] text-faint">
                       did not happen
                     </span>
                   ) : null}
                 </span>
+
+                {reading ? (
+                  <span className="mt-1 block text-[0.81rem] leading-relaxed text-muted">
+                    {reading}
+                  </span>
+                ) : null}
+
                 {detail ? (
                   <span
                     className={[
-                      "stage-detail mt-1 block wrap-break-word break-all font-mono text-[0.76rem]",
-                      isReview ? "text-review" : "text-muted",
+                      "stage-detail mt-1 block wrap-break-word break-all font-mono text-[0.75rem]",
+                      isReview ? "text-review" : "text-faint",
                     ].join(" ")}
                   >
                     {detail}
