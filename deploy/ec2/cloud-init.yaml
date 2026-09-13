@@ -1,0 +1,50 @@
+#cloud-config
+# EC2 user-data for a t3.small running Ubuntu 24.04 LTS.
+
+package_update: true
+package_upgrade: true
+
+packages:
+  - ca-certificates
+  - curl
+  - git
+
+write_files:
+  - path: /etc/apt/sources.list.d/docker.sources.template
+    content: |
+      Types: deb
+      URIs: https://download.docker.com/linux/ubuntu
+      Suites: __CODENAME__
+      Components: stable
+      Architectures: __ARCH__
+      Signed-By: /etc/apt/keyrings/docker.asc
+
+runcmd:
+  # --- Docker Engine + Compose plugin, official apt repo ---
+  - install -m 0755 -d /etc/apt/keyrings
+  - curl -fsSL https://download.docker.com/linux/ubuntu/gpg -o /etc/apt/keyrings/docker.asc
+  - chmod a+r /etc/apt/keyrings/docker.asc
+  - . /etc/os-release && sed -i "s/__CODENAME__/${UBUNTU_CODENAME:-$VERSION_CODENAME}/" /etc/apt/sources.list.d/docker.sources.template
+  - sed -i "s/__ARCH__/$(dpkg --print-architecture)/" /etc/apt/sources.list.d/docker.sources.template
+  - mv /etc/apt/sources.list.d/docker.sources.template /etc/apt/sources.list.d/docker.sources
+  - apt-get update
+  - apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+  - usermod -aG docker ubuntu
+
+  # --- Caddy, for automatic HTTPS in front of the gateway ---
+  # Verified current against caddyserver.com/docs/install at time of writing.
+  - apt-get install -y debian-keyring debian-archive-keyring apt-transport-https
+  - curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/gpg.key' | gpg --dearmor -o /usr/share/keyrings/caddy-stable-archive-keyring.gpg
+  - curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/debian.deb.txt' -o /etc/apt/sources.list.d/caddy-stable.list
+  - chmod o+r /usr/share/keyrings/caddy-stable-archive-keyring.gpg
+  - chmod o+r /etc/apt/sources.list.d/caddy-stable.list
+  - apt-get update
+  - apt-get install -y caddy
+
+  # --- placeholder marker so you know the base image is ready ---
+  - mkdir -p /opt/proofline
+  - >
+    printf 'Base image ready. Next: git clone the repo into /opt/proofline,
+    scp your .env there, copy deploy/ec2/Caddyfile to /etc/caddy/Caddyfile
+    with your real domain, then: cd /opt/proofline && docker compose up -d
+    && systemctl reload caddy\n' > /opt/proofline/READY.txt

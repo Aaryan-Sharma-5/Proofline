@@ -1,0 +1,14 @@
+# Reverse proxy in front of the gateway container. Caddy handles automatic
+# HTTPS (Let's Encrypt) so the gateway itself never needs a TLS cert.
+#
+# Replace the placeholder below with your real domain before first run, or
+# use ":80" temporarily against a bare IP (no TLS) while DNS propagates.
+#
+# GATEWAY_PUBLIC_URL in .env must match this domain exactly (https://...),
+# per CLAUDE.md Section 17 — the reference agent's outbound call to
+# "the public URL" only proves anything if it is genuinely this domain,
+# not the EC2 instance's private/loopback address.
+
+your-domain.example.com {
+	reverse_proxy 127.0.0.1:4021
+}
