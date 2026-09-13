@@ -121,13 +121,24 @@ export function ResultPanel({
         {rejected ? (
           <ul id="evidence" className="m-0 list-none p-0">
             <li>
-              <span className="code font-mono text-[0.82rem] font-semibold">
-                {verification.error}
-              </span>
-              <div className="explain mt-1 text-[0.87rem] leading-relaxed text-muted">
+              <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1.5">
+                <span className="code font-mono text-[0.84rem] font-semibold">
+                  {verification.error}
+                </span>
+                {/* Deliberately not an evidence level: this is a service error class, and labelling it LEVEL anything would imply a forensic finding that was never produced. */}
+                <span className="level whitespace-nowrap rounded-sm border border-line-strong px-1.5 py-0.5 font-mono text-[0.64rem] tracking-[0.05em] text-faint">
+                  SERVICE ERROR · NOT A FINDING
+                </span>
+              </div>
+              <div className="mt-1.5 text-[0.82rem] font-medium text-ink">
+                The document could not be analysed
+              </div>
+              <div className="explain mt-1 max-w-[44rem] text-[0.86rem] leading-relaxed text-muted">
                 {verification.message
                   ? `Reported by the verification service: ${verification.message}.`
-                  : "Reported by the verification service."}
+                  : "Reported by the verification service."}{" "}
+                No forensic checks ran, so no evidence was produced either for or
+                against this document.
               </div>
             </li>
           </ul>

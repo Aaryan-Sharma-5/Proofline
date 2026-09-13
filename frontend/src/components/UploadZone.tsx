@@ -48,6 +48,7 @@ interface Props {
   disabled: boolean;
   /** True while a verification is actually in flight. */
   running?: boolean;
+  settled?: boolean;
 }
 
 /**
@@ -55,7 +56,12 @@ interface Props {
  * selected-file state, so submitting a document is a deliberate action rather
  * than a file dialog that immediately spends a payment.
  */
-export function UploadZone({ onSubmit, disabled, running = false }: Props) {
+export function UploadZone({
+  onSubmit,
+  disabled,
+  running = false,
+  settled = false,
+}: Props) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [file, setFile] = useState<File | null>(null);
   const [rejection, setRejection] = useState<UploadRejection | null>(null);
@@ -131,13 +137,16 @@ export function UploadZone({ onSubmit, disabled, running = false }: Props) {
               <dd className="m-0 font-mono text-[0.78rem]">
                 {running ? (
                   <span className="text-review">Verification in progress</span>
+                ) : settled ? (
+                  // The decision itself is reported alongside; this only says the run is over, never what it concluded.
+                  <span className="text-muted">Verification complete</span>
                 ) : (
                   <span className="text-clear">Ready to verify</span>
                 )}
               </dd>
             </dl>
 
-            {!running ? (
+            {!running && !settled ? (
               <div className="mt-4 flex flex-wrap items-center gap-2">
                 <Button tone="primary" disabled={disabled} onClick={() => onSubmit(file)}>
                   Verify document

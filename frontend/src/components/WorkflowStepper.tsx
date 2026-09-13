@@ -20,7 +20,7 @@ const STEPS = [
   { n: "05", label: "Action" },
 ] as const;
 
-type StepState = "done" | "active" | "pending";
+type StepState = "done" | "active" | "pending" | "skipped";
 
 /** Maps the stage most recently reported by the server to a step index (0-4). */
 function stepIndexForStage(stage: Stage | null): number {
@@ -45,15 +45,21 @@ function stepIndexForStage(stage: Stage | null): number {
 
 interface Props {
   phase: RunPhase;
-  /** The furthest stage actually confirmed by the server (from seen events). */
   furthestSeen: Stage | null;
-  /** The stage the client is currently waiting on. */
   current: Stage | null;
   finished: boolean;
   failed: boolean;
+  reached?: Set<Stage>;
 }
 
-export function WorkflowStepper({ phase, furthestSeen, current, finished, failed }: Props) {
+export function WorkflowStepper({
+  phase,
+  furthestSeen,
+  current,
+  finished,
+  failed,
+  reached,
+}: Props) {
   if (phase === "idle") {
     // Before any document is chosen, only step 1 is meaningfully "next".
     return (
@@ -70,13 +76,23 @@ export function WorkflowStepper({ phase, furthestSeen, current, finished, failed
   // Whichever is further along is the true progress marker.
   const activeIndex = finished ? STEPS.length : Math.max(seenIndex, currentIndex, 0);
 
+  // Which steps the server genuinely reported. Absent a stage set (nothing to check against), fall back to position, which is what this did before.
+  const confirmed = (index: number): boolean => {
+    if (!reached) return index < activeIndex;
+    for (const stage of reached) {
+      if (stepIndexForStage(stage) === index) return true;
+    }
+    return false;
+  };
+
   return (
     <ol className="flex flex-wrap gap-x-6 gap-y-2" aria-label="Verification progress summary">
       {STEPS.map((step, index) => {
         let state: StepState = "pending";
-        if (index < activeIndex) state = "done";
+        if (confirmed(index)) state = "done";
         else if (index === activeIndex && !finished) state = "active";
-        else if (finished) state = "done";
+        // An ended stream cannot leave a step "pending": it either happened or it did not
+        else if (finished) state = "skipped";
 
         return (
           <StepMarker
@@ -115,21 +131,38 @@ function StepMarker({
               ? "border-ink bg-ink text-white"
               : state === "active"
                 ? "border-ink text-ink"
-                : "border-line-strong text-faint",
+                : state === "skipped"
+                  ? "border-dashed border-line-strong text-faint"
+                  : "border-line-strong text-faint",
         ].join(" ")}
       >
-        {state === "done" && !failed ? "✓" : step.n.replace(/^0/, "")}
+        {/* A dash, never a tick: this step did not run. */}
+        {failed ? step.n.replace(/^0/, "") : state === "done" ? "✓" : state === "skipped" ? "–" : step.n.replace(/^0/, "")}
       </span>
       <span
         className={[
           "font-mono text-[0.68rem] uppercase tracking-[0.07em]",
-          state === "pending" ? "text-faint" : failed ? "text-fault" : "text-ink",
+          failed
+            ? "text-fault"
+            : state === "pending"
+              ? "text-faint"
+              : state === "skipped"
+                ? "text-faint line-through decoration-line-strong"
+                : "text-ink",
         ].join(" ")}
       >
         {step.label}
         <span className="sr-only">
           {" "}
-          {failed ? "(failed)" : state === "done" ? "(complete)" : state === "active" ? "(in progress)" : "(not started)"}
+          {failed
+            ? "(failed)"
+            : state === "done"
+              ? "(complete)"
+              : state === "active"
+                ? "(in progress)"
+                : state === "skipped"
+                  ? "(did not happen)"
+                  : "(not started)"}
         </span>
       </span>
     </li>

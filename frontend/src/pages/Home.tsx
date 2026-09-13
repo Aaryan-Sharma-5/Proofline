@@ -71,6 +71,9 @@ export function Home() {
             current={events.current}
             finished={events.finished}
             failed={phase === "failed"}
+            // The stages the server actually reported, so a step that never ran
+            // cannot render as complete once the stream ends.
+            reached={new Set(events.seen.keys())}
           />
         </div>
       </header>
@@ -83,6 +86,7 @@ export function Home() {
               onSubmit={(file) => void verifyUpload(file)}
               disabled={busy}
               running={busy}
+              settled={phase === "complete" || phase === "failed"}
             />
 
             <div className="my-5 flex items-center gap-3">
@@ -269,10 +273,16 @@ function FailurePanel({ message, code }: { message: string; code?: string }) {
       <Panel title="What happened" connected connectsDown>
         <ul id="evidence" className="m-0 list-none p-0">
           <li>
-            <span className="code font-mono text-[0.82rem] font-semibold">
-              {code ?? "SERVICE_UNAVAILABLE"}
-            </span>
-            <div className="explain mt-1 max-w-[44rem] text-[0.87rem] leading-relaxed text-muted">
+            <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1.5">
+              <span className="code font-mono text-[0.84rem] font-semibold">
+                {code ?? "SERVICE_UNAVAILABLE"}
+              </span>
+              {/* Not an evidence level: no forensic check produced this. */}
+              <span className="level whitespace-nowrap rounded-sm border border-line-strong px-1.5 py-0.5 font-mono text-[0.64rem] tracking-[0.05em] text-faint">
+                SERVICE ERROR · NOT A FINDING
+              </span>
+            </div>
+            <div className="explain mt-1.5 max-w-[44rem] text-[0.86rem] leading-relaxed text-muted">
               {isPaymentFailure
                 ? "The verification payment did not complete, so analysis never started. This is a payment failure, not a document failure."
                 : "Reported by the verification service. No forensic evidence was produced, because no analysis completed."}
